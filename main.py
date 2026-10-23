@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """命令行入口。
 
-本地试跑（不做真实测速，只验证采集与解析）：
+本地试跑（不做测速，只验证采集与解析）：
     python main.py --no-speedtest --max-nodes 50
 
 完整跑一次：
@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from clashhunter import builder
-from clashhunter.mihomo import TEST_URL
+from clashhunter.mihomo import SPEED_URL, TEST_URL
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -31,19 +31,27 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="只跑指定源站，逗号分隔：manifest,clash-node,v2rayfree,stelliberty")
     parser.add_argument("--max-articles", type=int, default=3,
                         help="每个索引站最多回看几篇文章（当天文章没抓到就往前翻）")
+
     parser.add_argument("--tcp-timeout", type=float, default=3.0, help="TCP 预筛单端点超时(秒)")
     parser.add_argument("--tcp-workers", type=int, default=128, help="TCP 预筛并发")
-    parser.add_argument("--delay-url", default=TEST_URL, help="测速用的探测 URL")
-    parser.add_argument("--delay-timeout", type=int, default=5000, help="单节点测速超时(毫秒)")
-    parser.add_argument("--delay-workers", type=int, default=32, help="测速并发")
+
+    parser.add_argument("--delay-url", default=TEST_URL, help="延迟测速的探测 URL")
+    parser.add_argument("--delay-timeout", type=int, default=5000, help="单节点延迟测速超时(毫秒)")
+    parser.add_argument("--delay-workers", type=int, default=32, help="延迟测速并发")
+
+    parser.add_argument("--speed-url", default=SPEED_URL, help="下载测速用的 URL")
+    parser.add_argument("--speed-bytes", type=int, default=2_000_000,
+                        help="每个节点最多下载多少字节用于测速")
+    parser.add_argument("--speed-timeout", type=float, default=10.0, help="单节点下载测速超时(秒)")
+    parser.add_argument("--speed-workers", type=int, default=16,
+                        help="下载测速并发（太高会互相抢带宽，测出来偏低）")
+    parser.add_argument("--speed-max", type=int, default=400,
+                        help="最多对多少个节点做下载测速（按延迟从快到慢取）")
+    parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
+
     parser.add_argument("--max-nodes", type=int, default=300, help="最终最多保留多少个节点")
     parser.add_argument("--top-per-country", type=int, default=0,
                         help="每个国家最多保留几个（0 表示不限制）")
-    parser.add_argument("--exit-ip-max", type=int, default=300,
-                        help="最多对多少个节点做出口 IP 探测（串行，很慢）")
-    parser.add_argument("--exit-ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
-    parser.add_argument("--no-exit-ip", action="store_true",
-                        help="跳过出口 IP 探测，国家改用服务端 IP / 节点名推断")
     parser.add_argument("--no-speedtest", action="store_true",
                         help="跳过 mihomo 测速（本地没网时用，仅验证采集链路）")
     parser.add_argument("--quiet", action="store_true", help="少打日志")
@@ -75,12 +83,15 @@ def main(argv=None) -> int:
             delay_url=args.delay_url,
             delay_timeout_ms=args.delay_timeout,
             delay_workers=args.delay_workers,
+            speed_url=args.speed_url,
+            speed_bytes=args.speed_bytes,
+            speed_timeout=args.speed_timeout,
+            speed_workers=args.speed_workers,
+            speed_max=args.speed_max,
+            ip_timeout=args.ip_timeout,
             max_nodes=args.max_nodes,
-            exit_ip_max=args.exit_ip_max,
-            exit_ip_timeout=args.exit_ip_timeout,
-            no_exit_ip=args.no_exit_ip,
-            no_speedtest=args.no_speedtest,
             top_per_country=args.top_per_country,
+            no_speedtest=args.no_speedtest,
             log=log,
         )
     except SystemExit as exc:
@@ -101,8 +112,8 @@ def main(argv=None) -> int:
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        with open(summary, "a", encoding="utf-8") as handle:
-            handle.write(_step_summary(result))
+        with open(summary, "a", encoding="utf-8") as fh:
+            fh.write(_step_summary(result))
     return 0
 
 
@@ -113,7 +124,7 @@ def _step_summary(result) -> str:
         "",
         f"- 最终可用：**{stats.accepted}** 个节点，覆盖 **{len(result.countries)}** 个国家/地区",
         f"- 采集 {stats.raw} → 去重 {stats.unique} → TCP 存活 {stats.tcp_alive} → "
-        f"可加载 {stats.loadable} → 真实可用 {stats.alive}",
+        f"可加载 {stats.loadable} → 延迟可用 {stats.delay_ok} → 下载测速可用 {stats.speed_ok}",
         "",
         "| 地区 | 数量 |",
         "| --- | ---: |",

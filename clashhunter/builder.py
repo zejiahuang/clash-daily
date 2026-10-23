@@ -1,4 +1,4 @@
-"""串起整条流水线：采集 -> 去重 -> TCP 预筛 -> 真实测速 -> 出口国家 -> 重命名 -> 出订阅。"""
+"""串起整条流水线：采集 -> 去重 -> TCP 预筛 -> 延迟测速 -> 下载测速+出口国家 -> 重命名 -> 出订阅。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from . import geoip
 from . import netcheck
 from . import nodes as nodemod
 from . import sources as source_mod
-from .mihomo import GROUP, TEST_URL, Mihomo, ensure_binary
+from .mihomo import SPEED_URL, TEST_URL, Mihomo, ensure_binary
 
 CST = timezone(timedelta(hours=8))
 
@@ -31,7 +31,8 @@ class Stats:
     tcp_alive: int = 0
     loadable: int = 0
     rejected: int = 0
-    alive: int = 0
+    delay_ok: int = 0
+    speed_ok: int = 0
     accepted: int = 0
 
 
@@ -45,7 +46,7 @@ class BuildResult:
     generated_at: str = ""
 
 
-# --------------------------------------------------------------------------- 测速
+# --------------------------------------------------------------------------- 延迟测速
 
 
 def _delay_all(mh: Mihomo, proxies: list[dict], *, url: str, timeout_ms: int,
@@ -54,7 +55,7 @@ def _delay_all(mh: Mihomo, proxies: list[dict], *, url: str, timeout_ms: int,
     total = len(proxies)
     if not total:
         return results
-    log(f"  真实测速：{total} 个节点，并发 {workers}，单节点超时 {timeout_ms}ms")
+    log(f"  延迟测速：{total} 个节点，并发 {workers}，单节点超时 {timeout_ms}ms")
 
     def job(proxy: dict):
         return proxy["name"], mh.delay(proxy["name"], url, timeout_ms)
@@ -75,35 +76,6 @@ def _delay_all(mh: Mihomo, proxies: list[dict], *, url: str, timeout_ms: int,
     return results
 
 
-def _probe_exit_ips(mh: Mihomo, proxies: list[dict], *, timeout: float,
-                    log=print) -> dict[str, str]:
-    """逐个切到目标节点，从混合端口发请求问"我是谁"。必须串行——选择器是全局状态。"""
-    out: dict[str, str] = {}
-    total = len(proxies)
-    log(f"  出口 IP 探测：{total} 个节点（串行，选择器是全局状态）")
-    for index, proxy in enumerate(proxies, 1):
-        if not mh.select(proxy["name"]):
-            continue
-        ip = mh.http_via_proxy("http://api.ipify.org", timeout=timeout)
-        if not ip or not _is_ip(ip):
-            ip = mh.http_via_proxy("http://icanhazip.com", timeout=timeout)
-        if ip and _is_ip(ip):
-            out[proxy["name"]] = ip
-        if index % 25 == 0 or index == total:
-            log(f"    ... {index}/{total}，拿到出口 IP {len(out)}")
-    return out
-
-
-def _is_ip(text: str) -> bool:
-    import ipaddress
-
-    try:
-        ipaddress.ip_address(text.strip())
-        return True
-    except ValueError:
-        return False
-
-
 # --------------------------------------------------------------------------- 主流程
 
 
@@ -118,12 +90,15 @@ def build(
     delay_url: str = TEST_URL,
     delay_timeout_ms: int = 5000,
     delay_workers: int = 32,
+    speed_url: str = SPEED_URL,
+    speed_bytes: int = 2_000_000,
+    speed_timeout: float = 10.0,
+    speed_workers: int = 16,
+    speed_max: int = 400,
+    ip_timeout: float = 6.0,
     max_nodes: int = 300,
-    exit_ip_max: int = 300,
-    exit_ip_timeout: float = 6.0,
-    no_exit_ip: bool = False,
-    no_speedtest: bool = False,
     top_per_country: int = 0,
+    no_speedtest: bool = False,
     log=print,
 ) -> BuildResult:
     started = time.time()
@@ -143,6 +118,9 @@ def build(
             "error": report.error,
         })
     result.stats.raw = len(raw)
+    failed = [s["id"] for s in result.sources if s["error"]]
+    if failed:
+        log(f"  [warn] 以下源站失败: {', '.join(failed)}")
     if not raw:
         raise SystemExit("所有源站都没有解析出节点，检查源站是否改版")
 
@@ -169,13 +147,13 @@ def build(
     log(f"  通过预筛 {len(alive)}")
 
     delays: dict[str, int] = {}
-    mh: Mihomo | None = None
+    probes: dict[str, dict] = {}
+    candidates = alive
 
     if no_speedtest:
-        log("[4/6] 跳过真实测速（--no-speedtest）")
-        candidates = alive
+        log("[4/6] 跳过测速（--no-speedtest）")
     else:
-        log("[4/6] 加载内核并真实测速")
+        log("[4/6] 延迟测速")
         binary = ensure_binary(work_dir / "bin", log=log)
         mh = Mihomo(binary, work_dir, log=log)
         try:
@@ -189,69 +167,36 @@ def build(
                 mh, loadable, url=delay_url, timeout_ms=delay_timeout_ms,
                 workers=delay_workers, log=log,
             )
-            result.stats.alive = len(delays)
-            log(f"  真实可用 {len(delays)}/{len(loadable)}")
+            result.stats.delay_ok = len(delays)
+            log(f"  延迟可用 {len(delays)}/{len(loadable)}")
             candidates = [p for p in loadable if p["name"] in delays]
             candidates.sort(key=lambda p: delays[p["name"]])
-
             if not candidates:
-                raise SystemExit("测速后没有任何节点可用")
+                raise SystemExit("延迟测速后没有任何节点可用")
+            if speed_max > 0:
+                candidates = candidates[:speed_max]
 
-            # 先截断再探测：出口 IP 探测是串行的，不该为最终会丢弃的节点花时间
-            if max_nodes > 0:
-                candidates = candidates[:max_nodes]
-
-            # 5. 出口国家 --------------------------------------------------
-            if no_exit_ip:
-                log("[5/6] 跳过出口 IP 探测（--no-exit-ip）")
-                exit_ips = {}
-            else:
-                log("[5/6] 出口 IP 探测")
-                probe_list = candidates[:exit_ip_max] if exit_ip_max > 0 else candidates
-                exit_ips = _probe_exit_ips(mh, probe_list, timeout=exit_ip_timeout, log=log)
+            # 5. 下载测速 + 出口 IP --------------------------------------
+            log("[5/6] 下载测速与出口 IP")
+            probes = mh.probe_all(
+                candidates,
+                speed_url=speed_url, speed_bytes=speed_bytes,
+                speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+                workers=speed_workers, log=log,
+            )
+            result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
+            log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
         finally:
-            if mh:
-                mh.stop()
-                mh = None
-    if no_speedtest:
-        exit_ips = {}
-
-    candidates = candidates[:max_nodes] if max_nodes > 0 else candidates
+            mh.stop()
 
     # 6. 国家判定 + 重命名 -------------------------------------------------
     log("[6/6] 国家判定与重命名")
-    code_of: dict[str, str] = {}
+    candidates = _rank(candidates, probes)
+    if max_nodes > 0:
+        candidates = candidates[:max_nodes]
 
-    # 6a. 出口 IP（最准）
-    if exit_ips:
-        geo = geoip.lookup_batch(list(exit_ips.values()), log=log)
-        for name, ip in exit_ips.items():
-            hit = geo.get(ip)
-            if hit and hit[0]:
-                code_of[name] = hit[0]
-    log(f"  出口 IP 定位成功 {len(code_of)}")
+    code_of = _resolve_countries(candidates, probes, log=log)
 
-    # 6b. 服务端 IP 兜底
-    rest = [p for p in candidates if p["name"] not in code_of]
-    if rest:
-        resolved = geoip.resolve_many([p["server"] for p in rest], log=log)
-        geo2 = geoip.lookup_batch(list(resolved.values()), log=log)
-        for proxy in rest:
-            ip = resolved.get(proxy["server"])
-            hit = geo2.get(ip) if ip else None
-            if hit and hit[0]:
-                code_of[proxy["name"]] = hit[0]
-
-    # 6c. 节点名兜底
-    for proxy in candidates:
-        if proxy["name"] in code_of:
-            continue
-        hint = country_mod.code_from_name(proxy.get("name") or "")
-        if hint:
-            code_of[proxy["name"]] = hint
-    log(f"  最终定位成功 {sum(1 for p in candidates if p['name'] in code_of)}/{len(candidates)}")
-
-    # 分组重命名
     grouped: dict[str, list[dict]] = defaultdict(list)
     for proxy in candidates:
         grouped[code_of.get(proxy["name"], "??")].append(proxy)
@@ -267,12 +212,13 @@ def build(
     for code in ordered_codes:
         label = country_mod.zh_name(code) or (code if code != "??" else country_mod.UNKNOWN_ZH)
         bucket = grouped[code]
-        bucket.sort(key=lambda p: delays.get(p["name"], 99999))
+        bucket.sort(key=lambda p: -_speed_of(p, probes))
         if top_per_country > 0:
             bucket = bucket[:top_per_country]
         for index, proxy in enumerate(bucket, 1):
             original = proxy["name"]
-            new_name = f"{label}-{index:02d}"
+            speed = _speed_of(proxy, probes)
+            new_name = f"{label}-{index:02d}-{speed:.1f}MB/S"
             proxy = dict(proxy)
             proxy["name"] = new_name
             final.append(proxy)
@@ -284,7 +230,8 @@ def build(
                 "server": proxy["server"],
                 "port": proxy["port"],
                 "delay": delays.get(original),
-                "exit_ip": exit_ips.get(original),
+                "speed_mbps": round(speed, 2),
+                "exit_ip": probes.get(original, {}).get("exit_ip"),
                 "country_code": code,
                 "country": label,
             })
@@ -299,6 +246,62 @@ def build(
     return result
 
 
+def _speed_of(proxy: dict, probes: dict[str, dict]) -> float:
+    return float(probes.get(proxy["name"], {}).get("speed") or 0.0)
+
+
+def _rank(candidates: list[dict], probes: dict[str, dict]) -> list[dict]:
+    """有速度的按速度降序排前面，没速度的保持原有（延迟）顺序排后面。"""
+    if not probes:
+        return candidates
+    with_speed = [p for p in candidates if _speed_of(p, probes) > 0]
+    without = [p for p in candidates if _speed_of(p, probes) <= 0]
+    with_speed.sort(key=lambda p: -_speed_of(p, probes))
+    return with_speed + without
+
+
+def _resolve_countries(candidates: list[dict], probes: dict[str, dict], *, log=print) -> dict[str, str]:
+    """国家判定优先级：出口 IP > 服务端 IP > 节点名里的地区标签。"""
+    code_of: dict[str, str] = {}
+
+    # 1. 出口 IP（最准）
+    exit_map = {
+        name: item["exit_ip"]
+        for name, item in probes.items()
+        if item.get("exit_ip")
+    }
+    if exit_map:
+        geo = geoip.lookup_batch(list(exit_map.values()), log=log)
+        for name, ip in exit_map.items():
+            hit = geo.get(ip)
+            if hit and hit[0]:
+                code_of[name] = hit[0]
+    log(f"  出口 IP 定位成功 {len(code_of)}")
+
+    # 2. 服务端 IP 兜底
+    rest = [p for p in candidates if p["name"] not in code_of]
+    if rest:
+        resolved = geoip.resolve_many([p["server"] for p in rest], log=log)
+        geo2 = geoip.lookup_batch(list(resolved.values()), log=log)
+        for proxy in rest:
+            ip = resolved.get(proxy["server"])
+            hit = geo2.get(ip) if ip else None
+            if hit and hit[0]:
+                code_of[proxy["name"]] = hit[0]
+
+    # 3. 节点名兜底
+    for proxy in candidates:
+        if proxy["name"] in code_of:
+            continue
+        hint = country_mod.code_from_name(proxy.get("name") or "")
+        if hint:
+            code_of[proxy["name"]] = hint
+
+    located = sum(1 for p in candidates if p["name"] in code_of)
+    log(f"  最终定位成功 {located}/{len(candidates)}")
+    return code_of
+
+
 # --------------------------------------------------------------------------- 输出
 
 
@@ -309,7 +312,7 @@ def _header(result: BuildResult) -> str:
         f"# 生成时间：{result.generated_at}",
         f"# 节点数量：{result.stats.accepted}",
         f"# 覆盖地区：{'、'.join(f'{k}×{v}' for k, v in result.countries.items())}",
-        "# 节点已按「真实测速延迟」排序，名称格式为「国家-序号」",
+        "# 节点名格式：国家-序号-实测峰值速度（MB/S）",
         "# 免费节点随时可能失效，仅供学习与技术研究使用",
         "# ============================================================",
         "",
@@ -398,37 +401,40 @@ def _render_markdown(result: BuildResult) -> str:
         "| 阶段 | 数量 |",
         "| --- | ---: |",
         f"| 原始采集 | {stats.raw} |",
-        f"| 去重后 | {stats.unique} |",
+        f"| 去重后 | {stats.unique}（去掉重复 {stats.duplicates}） |",
         f"| TCP 端口存活 | {stats.tcp_alive} |",
         f"| 内核可加载 | {stats.loadable} |",
-        f"| 真实代理可用 | {stats.alive} |",
+        f"| 延迟可用 | {stats.delay_ok} |",
+        f"| 下载测速可用 | {stats.speed_ok} |",
         f"| 最终收录 | {stats.accepted} |",
         "",
         "## 地区分布",
         "",
-        "| 地区 | 节点数 | 最快延迟 |",
+        "| 地区 | 节点数 | 峰值速度 |",
         "| --- | ---: | ---: |",
     ]
-    fastest: dict[str, int] = {}
+    best: dict[str, float] = {}
     for record in result.records:
-        delay = record.get("delay")
-        if delay:
-            cur = fastest.get(record["country"])
-            if cur is None or delay < cur:
-                fastest[record["country"]] = delay
+        cur = best.get(record["country"])
+        if cur is None or record["speed_mbps"] > cur:
+            best[record["country"]] = record["speed_mbps"]
     for name, count in result.countries.items():
-        ms = fastest.get(name)
-        lines.append(f"| {name} | {count} | {f'{ms} ms' if ms else '—'} |")
+        speed = best.get(name)
+        lines.append(f"| {name} | {count} | {f'{speed:.1f} MB/S' if speed else '—'} |")
 
-    lines += ["", "## 延迟最低的 15 个节点", "", "| 名称 | 类型 | 延迟 | 出口 IP |", "| --- | --- | ---: | --- |"]
-    ranked = sorted(
-        [r for r in result.records if r.get("delay")],
-        key=lambda r: r["delay"],
-    )[:15]
+    lines += [
+        "",
+        "## 速度最快的 15 个节点",
+        "",
+        "| 名称 | 类型 | 峰值速度 | 延迟 | 出口 IP |",
+        "| --- | --- | ---: | ---: | --- |",
+    ]
+    ranked = sorted(result.records, key=lambda r: -r["speed_mbps"])[:15]
     for record in ranked:
+        delay = f"{record['delay']} ms" if record.get("delay") else "—"
         lines.append(
-            f"| {record['name']} | {record['type']} | {record['delay']} ms | "
-            f"{record.get('exit_ip') or '—'} |"
+            f"| {record['name']} | {record['type']} | {record['speed_mbps']:.1f} MB/S | "
+            f"{delay} | {record.get('exit_ip') or '—'} |"
         )
 
     lines += ["", "## 源站", ""]

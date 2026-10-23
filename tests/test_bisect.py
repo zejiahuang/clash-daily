@@ -40,8 +40,13 @@ def fake_config_ok(self, proxies):
     CHECKS["n"] += 1
     path = self._write_config(proxies, "check.yaml")
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert doc["proxy-groups"][0]["name"] == "PROBE"
-    assert len(doc["proxy-groups"][0]["proxies"]) == len(proxies)
+    if proxies:
+        assert doc["proxy-groups"][0]["name"] == "PROBE"
+        assert len(doc["proxy-groups"][0]["proxies"]) == len(proxies)
+    else:
+        # 空配置不能带空的 select 组，否则真实内核会拒绝（见 mihomo._config 注释）
+        assert "proxy-groups" not in doc
+        assert doc["rules"] == ["MATCH,DIRECT"]
     return not any(str(p["server"]).startswith("BAD") for p in doc["proxies"])
 
 

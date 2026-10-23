@@ -11,15 +11,18 @@ on:
         description: "最终最多保留多少个节点"
         required: false
         default: "300"
+      speed_max:
+        description: "最多对多少个节点做下载测速"
+        required: false
+        default: "400"
+      speed_workers:
+        description: "下载测速并发（太高会互相抢带宽）"
+        required: false
+        default: "16"
       delay_timeout:
-        description: "单节点测速超时（毫秒）"
+        description: "单节点延迟测速超时（毫秒）"
         required: false
         default: "5000"
-      skip_exit_ip:
-        description: "跳过出口 IP 探测（更快，但国家判定精度下降）"
-        type: boolean
-        required: false
-        default: false
 
 # 提交 dist/ 需要写权限；用仓库自带的 GITHUB_TOKEN 就够，不需要额外 PAT。
 permissions:
@@ -32,7 +35,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: 检出仓库
@@ -49,35 +52,52 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: 单元测试（解析器 + 二分定位）
+        run: |
+          python tests/test_parsers.py
+          python tests/test_bisect.py
+
       - name: 采集 · 测速 · 生成订阅
         env:
           MAX_NODES: ${{ inputs.max_nodes || '300' }}
+          SPEED_MAX: ${{ inputs.speed_max || '400' }}
+          SPEED_WORKERS: ${{ inputs.speed_workers || '16' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
         run: |
-          EXTRA=""
-          if [ "${{ inputs.skip_exit_ip }}" = "true" ]; then
-            EXTRA="--no-exit-ip"
-          fi
           python main.py \
             --out dist \
             --work work \
             --max-nodes "$MAX_NODES" \
-            --delay-timeout "$DELAY_TIMEOUT" \
-            $EXTRA
+            --speed-max "$SPEED_MAX" \
+            --speed-workers "$SPEED_WORKERS" \
+            --delay-timeout "$DELAY_TIMEOUT"
 
       - name: 校验产物
         run: |
           test -s dist/clash.yaml || { echo "::error::dist/clash.yaml 未生成"; exit 1; }
           python - <<'PY'
-          import yaml, pathlib
+          import re, yaml, pathlib
+
           doc = yaml.safe_load(pathlib.Path("dist/clash.yaml").read_text(encoding="utf-8"))
           proxies = doc.get("proxies") or []
           assert proxies, "订阅里没有节点"
+
           names = [p["name"] for p in proxies]
           assert len(names) == len(set(names)), "节点名有重复，Clash 会拒绝加载"
+
+          pattern = re.compile(r"^.+-(\d{2,})-(\d+\.\d)MB/S$")
+          bad = [n for n in names if not pattern.match(n)]
+          assert not bad, f"有 {len(bad)} 个节点名不符合「国家-序号-速度MB/S」格式: {bad[:5]}"
+
           for p in proxies:
               assert p.get("server") and p.get("port"), f"节点缺字段: {p}"
-          print(f"校验通过：{len(proxies)} 个节点，{len(set(names))} 个唯一名称")
+
+          groups = {g["name"]: g for g in doc["proxy-groups"]}
+          assert "节点选择" in groups and "自动选择" in groups
+          assert set(names) <= set(groups["自动选择"]["proxies"])
+
+          speeds = sorted((float(pattern.match(n).group(2)) for n in names), reverse=True)
+          print(f"校验通过：{len(proxies)} 个节点，命名格式正确，最快 {speeds[0]} MB/S")
           PY
 
       - name: 保存产物（即使推送失败也能下载）
