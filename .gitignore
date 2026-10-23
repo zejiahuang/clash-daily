@@ -1,0 +1,17 @@
+# 运行期临时目录（内核、中间配置、日志）
+work/
+work*/
+tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 注意：dist/ 故意不忽略 —— 订阅产物需要提交回仓库才能被客户端订阅。
