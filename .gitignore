@@ -1,7 +1,8 @@
 # 运行期临时目录（内核、中间配置、日志）
-work/
-work*/
-tmp/
+# 注意：必须锚定仓库根，否则 work*/ 会把 .github/workflows/ 一起匹配掉
+/work/
+/work*/
+/tmp/
 
 # Python
 __pycache__/
@@ -22,3 +23,9 @@ run.zip
 
 # 临时探测文件
 *.bin
+
+# 本地试跑产物
+/out*/
+poll*.sh
+run*.zip
+a.json
