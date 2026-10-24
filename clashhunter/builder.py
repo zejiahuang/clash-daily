@@ -101,6 +101,8 @@ def build(
     speed_max: int = 0,
     refine_top: int = 300,
     refine_workers: int = 16,
+    apac_check_top: int = 120,
+    apac_check_workers: int = 4,
     ip_timeout: float = 6.0,
     max_nodes: int = 80,
     country_share: float = 0.2,
@@ -262,6 +264,20 @@ def build(
     result.stats.merged_exit = _before_merge - len(candidates)
 
     code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
+
+    # 亚太视角交叉验证：直连测速是「测速机 → 节点 → 目标站」，而使用者走的是
+    # 「国内 → 节点 → 目标站」。两段路不同，所以必须拿一台亚太节点当跳板对照一次，
+    # 否则「美西 112 MB/s、亚太 0.5 MB/s」这种节点在产物里完全看不出问题。
+    # probe_all 自带 start/stop，出了上面的 try 也能直接再调。
+    apac: dict[str, dict] = {}
+    if not no_speedtest and apac_check_top > 0:
+        apac = _apac_check(
+            mh, candidates, probes, code_of,
+            top=apac_check_top, workers=apac_check_workers,
+            speed_url=speed_url, speed_bytes=speed_bytes,
+            speed_timeout=speed_timeout, log=log,
+        )
+
     if max_nodes > 0:
         # 单国上限：名额越少、国家越多，配额就越接近 1，越多名额落到「纯速度」上，
         # 而测速机在美国 —— 取 80 个时美国曾占到 30/80 = 37.5%。
@@ -334,6 +350,94 @@ def _shown_speed(speed: float) -> float:
     原始值 > 0 能过过滤，但名字写成 `XX-01-0.0MB/S` —— 对使用者就是个坏节点。
     """
     return float(f"{speed:.1f}")
+
+
+# 跳板必须落在这里，「亚太视角」才成立。含大洋洲与南亚：它们到国内的路径
+# 和到美西完全不同，正是要拿来对照的。
+APAC_CODES = frozenset({
+    "JP", "HK", "TW", "MO", "SG", "KR", "TH", "VN", "MY", "ID", "PH",
+    "IN", "AU", "NZ", "KH", "MM", "LA", "BN", "MN", "KZ", "PK", "BD",
+    "LK", "NP",
+})
+
+
+def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
+                code_of: dict[str, str], *, top: int, workers: int,
+                speed_url: str, speed_bytes: int, speed_timeout: float,
+                log=print) -> dict[str, dict]:
+    """经一台亚太节点当跳板复测最快的 top 个，找出「美西快、亚太慢」的节点。
+
+    为什么需要它：直连测速走的是「测速机 → 节点 → 目标站」，而中国用户走的是
+    「国内 → 节点 → 目标站」。两段路不同，所以一个从美西看 112 MB/s 的节点，
+    从亚太看可能只有 0.5 MB/s —— 现有流程对此完全无感。
+
+    ⚠️ 本轮**只记录、不剔除**。串联链路的速度取最慢的一段，而「本机 → 跳板」
+    这一段就在路径里 ⇒ 跳板自身速度就是天花板。在天花板摸清之前剔除会误杀。
+
+    判据的可靠性：只有「亚太测值远低于天花板」时该测量才有分辨力。
+    测出 0.8 MB/s 而天花板 16 MB/s ⇒ 它从亚太看就是 0.8，可信。
+    测出 16 MB/s ⇒ 只能说「至少 16」，测不出更多。
+    """
+    pool = [
+        p for p in candidates
+        if code_of.get(p["name"]) in APAC_CODES and _speed_of(p, probes) > 0
+    ]
+    if not pool:
+        log("  亚太候选池为空（没有测出速度的亚太节点），跳过交叉验证")
+        return {}
+    pool.sort(key=lambda p: -_speed_of(p, probes))
+    hop = pool[0]
+    hop_speed = _speed_of(hop, probes)
+    log(f"  亚太跳板选 {hop['name']}（直连 {hop_speed:.1f} MB/s，"
+        f"候选池 {len(pool)} 台）—— 它的速度就是本轮天花板")
+
+    sample = [
+        p for p in sorted(candidates, key=lambda p: -_speed_of(p, probes))
+        if p["name"] != hop["name"]
+    ][:top]
+    if not sample:
+        return {}
+    log(f"  经跳板复测 {len(sample)} 个（并发 {workers}），"
+        f"用来识别「直连快但亚太慢」的节点")
+    again = mh.probe_all(
+        sample,
+        speed_url=speed_url, speed_bytes=speed_bytes,
+        speed_timeout=speed_timeout, ip_timeout=0.0,
+        workers=workers, hop=hop, log=log,
+    )
+
+    ratios: list[float] = []
+    ceiling_hits = 0
+    false_pos: list[tuple[str, float, float]] = []
+    for proxy in sample:
+        name = proxy["name"]
+        direct = _speed_of(proxy, probes)
+        via = float(again.get(name, {}).get("speed") or 0.0)
+        if via <= 0 or direct <= 0:
+            continue
+        ratios.append(via / direct)
+        if via >= hop_speed * 0.9:
+            ceiling_hits += 1
+        # 直连不慢、亚太侧却掉到 1 MB/s 以下 —— 1.0 远低于天花板，
+        # 说明这个低值不是被天花板压出来的，是真的慢。
+        if direct >= 3.0 and via < 1.0:
+            false_pos.append((name, direct, via))
+
+    if ratios:
+        ratios.sort()
+        log(f"  亚太/直连 比值中位数 {ratios[len(ratios) // 2]:.2f}，"
+            f"{ceiling_hits}/{len(ratios)} 个撞到天花板"
+            f"（≥{hop_speed * 0.9:.1f} MB/s，这些的真实值测不出来）")
+    if false_pos:
+        log(f"  ⚠️ 疑似假阳性 {len(false_pos)} 个"
+            f"（直连 ≥3 但亚太 <1 MB/s，本轮只报告不剔除）：")
+        for name, direct, via in false_pos[:8]:
+            log(f"      {name}  直连 {direct:.1f} → 亚太 {via:.1f}")
+        if len(false_pos) > 8:
+            log(f"      ……另有 {len(false_pos) - 8} 个")
+    else:
+        log("  没有发现「直连快但亚太慢」的节点")
+    return again
 
 
 def _dedupe_by_exit(candidates: list[dict], probes: dict[str, dict], *, log=print) -> list[dict]:
