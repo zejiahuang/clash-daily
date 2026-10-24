@@ -93,8 +93,10 @@ def build(
     speed_url: str = SPEED_URL,
     speed_bytes: int = 2_000_000,
     speed_timeout: float = 10.0,
-    speed_workers: int = 16,
-    speed_max: int = 400,
+    speed_workers: int = 32,
+    speed_max: int = 0,
+    refine_top: int = 300,
+    refine_workers: int = 16,
     ip_timeout: float = 6.0,
     max_nodes: int = 100,
     top_per_country: int = 0,
@@ -176,17 +178,22 @@ def build(
             if not candidates:
                 raise SystemExit("延迟测速后没有任何节点可用")
 
-            # 按国家分层取样再测速。
-            # 不做这一步的话，直接取"延迟最低的前 N 个"等于只挑离 runner 最近的节点：
-            # 实测在美西 runner 上，200 个结果里 179 个是美国节点，
-            # 因为美国节点延迟 10–40ms、亚洲节点 150–250ms，纯按延迟排根本轮不到它们。
+            # 延迟排序只用于「谁先测」和兜底，不再用来砍数量。
+            # 曾经的做法是测速前按国家分层砍到 speed_max 个，理由是省时间；
+            # 但那样「没被抽中测速」的节点永远进不了最终名单，等于用延迟预先决定了结果。
+            # 现在默认全量测速（speed_max=0），只在显式指定上限时才截断。
             pre_codes = _server_countries(candidates, log=log)
-            if speed_max > 0:
+            if 0 < speed_max < len(candidates):
                 candidates = _stratified(
                     candidates, speed_max, pre_codes, key=lambda p: delays[p["name"]]
                 )
-                log(f"  按国家分层后进入测速 {len(candidates)} 个，"
-                    f"覆盖 {len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区")
+                log(f"  按国家分层截断后进入测速 {len(candidates)} 个，"
+                    f"覆盖 {len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区"
+                    f"（speed_max={speed_max}）")
+            else:
+                log(f"  全量测速 {len(candidates)} 个，覆盖 "
+                    f"{len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区"
+                    f"（不预采样）")
 
             # 5. 下载测速 + 出口 IP --------------------------------------
             log("[5/6] 下载测速与出口 IP")
@@ -198,12 +205,49 @@ def build(
             )
             result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
             log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
+
+            # 复测：高并发初筛时几十个节点在抢同一条出口带宽，快节点会被压低，
+            # 而写进节点名的就是这个数。所以把「可能进入最终名单」的那批用低并发重测一次。
+            # 只覆盖复测确实测出速度的项 —— 复测失败不能把初筛的有效结果冲掉。
+            if refine_top > 0:
+                ranked = sorted(candidates, key=lambda p: -_speed_of(p, probes))
+                refine = [p for p in ranked[:refine_top] if _speed_of(p, probes) > 0]
+                if refine:
+                    log(f"  复测前 {len(refine)} 个（并发 {refine_workers}，"
+                        f"消除初筛抢带宽造成的低估）")
+                    again = mh.probe_all(
+                        refine,
+                        speed_url=speed_url, speed_bytes=speed_bytes,
+                        speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+                        workers=refine_workers, log=log,
+                    )
+                    improved = 0
+                    for name, item in again.items():
+                        if item.get("speed", 0) > 0:
+                            if item["speed"] > probes.get(name, {}).get("speed", 0):
+                                improved += 1
+                            probes[name] = item
+                    result.stats.speed_ok = sum(
+                        1 for v in probes.values() if v.get("speed", 0) > 0)
+                    log(f"  复测完成，其中 {improved} 个比初筛更快；"
+                        f"总计可用 {result.stats.speed_ok}")
         finally:
             mh.stop()
 
     # 6. 国家判定 + 重命名 -------------------------------------------------
     log("[6/6] 国家判定与重命名")
     candidates = _rank(candidates, probes)
+
+    # 只收录「实测出速度」的节点。speed=0 有两种含义：节点不可用，或者压根没被测到；
+    # 两种写进名字里都是 0.0MB/S，对使用者没有意义。
+    # 实测过一轮：测速前截断到 400 时，最终 100 个里有 21 个是 0.0MB/S —— 就是这条没做。
+    if probes:
+        measured = [p for p in candidates if _speed_of(p, probes) > 0]
+        if measured:
+            log(f"  实测有速度的节点 {len(measured)}/{len(candidates)}，"
+                f"丢弃 {len(candidates) - len(measured)} 个 0 速度节点")
+            candidates = measured
+
     code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
     if max_nodes > 0:
         candidates = _stratified(
