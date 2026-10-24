@@ -18,7 +18,7 @@ from . import geoip
 from . import netcheck
 from . import nodes as nodemod
 from . import sources as source_mod
-from .mihomo import SPEED_URL, TEST_URL, Mihomo, ensure_binary
+from .mihomo import SPEED_URL, TEST_URL, Mihomo, _reason_counts, ensure_binary
 
 CST = timezone(timedelta(hours=8))
 
@@ -35,6 +35,9 @@ class Stats:
     speed_ok: int = 0
     merged_exit: int = 0
     accepted: int = 0
+    # 下载测速的失败原因（次数, 原因），降序。写进 report.json —— CNB 的构建日志
+    # 从外部读不到，只有落在仓库里的东西才能拿来事后判断。
+    speed_errors: tuple = ()
 
 
 @dataclass
@@ -229,6 +232,11 @@ def build(
             )
             result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
             log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
+            # 失败原因落盘：CNB 的日志从外部读不到，事后只能靠 report.json 里的这一栏
+            result.stats.speed_errors = tuple(
+                {"count": count, "reason": reason}
+                for count, reason in _reason_counts(probes)[:5]
+            )
 
             # 全灭时给一次机会，且只改一个变量：每节点下载量降到 64 KB 门槛之上。
             # 理由：读数 0 只出现在「一个字节都没读到」或「不到 64 KB」，
@@ -246,6 +254,10 @@ def build(
                 result.stats.speed_ok = sum(
                     1 for v in probes.values() if v.get("speed", 0) > 0)
                 log(f"  重试后可用 {result.stats.speed_ok}/{len(candidates)}")
+                result.stats.speed_errors = tuple(
+                    {"count": count, "reason": reason}
+                    for count, reason in _reason_counts(probes)[:5]
+                )
 
             # 复测：低并发 + 更大的下载量 + 多个测速源取中位数，重测「可能进入最终名单」的那批。
             # 为什么必须换更大的下载量、为什么不能沿用初筛的 speed_bytes，
@@ -858,6 +870,26 @@ def _render_markdown(result: BuildResult) -> str:
         f"| 同出口合并 | -{stats.merged_exit}（同一出口只留最快的那个） |",
         f"| 最终收录 | {stats.accepted} |",
         "",
+    ]
+    # 可用率低时把原因摊开。日志从外部读不到，报告里没有这一栏的话，
+    # 「下载测速可用 0」就永远只是一句无解的话。
+    if stats.speed_errors and stats.speed_ok * 2 < max(1, stats.delay_ok):
+        lines += [
+            "## ⚠️ 下载测速失败原因",
+            "",
+            "| 次数 | 原因 |",
+            "| ---: | --- |",
+        ]
+        for item in stats.speed_errors:
+            lines.append(f"| {item['count']} | `{item['reason']}` |")
+        lines += [
+            "",
+            "> 判据：`Connection refused` ⇒ 本地监听端口没起来；"
+            "`只读到 0 字节` ⇒ 隧道被对端关掉（上游拨号失败）；"
+            "`HTTPError 403` ⇒ 目标站拒了这个出口 IP；`timed out` ⇒ 节点慢到读不完。",
+            "",
+        ]
+    lines += [
         "## 地区分布",
         "",
         "| 地区 | 节点数 | 平均速度 |",

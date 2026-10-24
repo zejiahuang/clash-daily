@@ -99,6 +99,21 @@ def _direct_opener():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def _reason_counts(results: dict[str, dict]) -> list[tuple[int, str]]:
+    """按出现次数降序的失败原因列表 `[(次数, 原因), ...]`。
+
+    失败原因必须能带出流水线之外：CNB 的构建日志是前端流式加载的，
+    仓库令牌也读不到 OpenAPI —— 只有写进 `dist/report.json` 的东西才留得下来。
+    """
+    counts: dict[str, int] = {}
+    for value in results.values():
+        reason = value.get("speed_err")
+        if reason:
+            counts[reason] = counts.get(reason, 0) + 1
+    return sorted(((count, reason) for reason, count in counts.items()),
+                  key=lambda pair: -pair[0])
+
+
 def _top_reason(results: dict[str, dict], limit: int = 72) -> str:
     """出现次数最多的失败原因，形如 `37 个 URLError: ...`。没记录到异常时返回空串。
 
@@ -107,14 +122,10 @@ def _top_reason(results: dict[str, dict], limit: int = 72) -> str:
     分不清是连不上、被拒、超时还是读得太少 —— 这四种修法完全不同。
     把它挂到进度行上，日志随便截一段都是判据。
     """
-    counts: dict[str, int] = {}
-    for value in results.values():
-        reason = value.get("speed_err")
-        if reason:
-            counts[reason] = counts.get(reason, 0) + 1
+    counts = _reason_counts(results)
     if not counts:
         return ""
-    reason, count = max(counts.items(), key=lambda kv: kv[1])
+    count, reason = counts[0]
     return f"{count} 个 {reason[:limit]}"
 
 
@@ -733,6 +744,11 @@ class Mihomo:
                                              f"{type(exc).__name__}: {exc}",
                             }
                         done += 1
+                        # 前三个失败立刻把原因打出来：等不到 25 个就能定性，
+                        # 全灭的时候这 3 行就是全部判据。
+                        if done <= 3 and results[name].get("speed", 0) <= 0:
+                            log(f"    [首例] {name} 失败："
+                                f"{results[name].get('speed_err') or '（未记录原因）'}")
                         if done % 25 == 0 or done == total:
                             alive = sum(1 for v in results.values() if v["speed"] > 0)
                             # 进度行带上「到现在为止最常见的失败原因」：日志被截断
@@ -748,13 +764,9 @@ class Mihomo:
         # 三者的修法完全不同，而日志里原来只有那一个 0。
         ok = sum(1 for v in results.values() if v["speed"] > 0)
         if ok * 2 < len(results):
-            counts: dict[str, int] = {}
-            for value in results.values():
-                reason = value.get("speed_err")
-                if reason:
-                    counts[reason] = counts.get(reason, 0) + 1
+            counts = _reason_counts(results)
             log(f"  ⚠️ 可用率只有 {ok}/{len(results)}，失败原因（按出现次数）：")
-            for reason, count in sorted(counts.items(), key=lambda kv: -kv[1])[:5]:
+            for count, reason in counts[:5]:
                 log(f"      {count:>4} 个  {reason}")
             if not counts:
                 log("      没有记录到异常 —— 说明是「读到了但不到 64 KB」，"
