@@ -36,7 +36,7 @@ on:
       apac_check_top:
         description: '经亚太节点当跳板复测最快的多少个（0=不做交叉验证）'
         required: false
-        default: '120'
+        default: '40'
 
 concurrency:
   max: 1
@@ -91,7 +91,8 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           SPEED_MAX: ${{ inputs.speed_max || '0' }}
           SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
-          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '120' }}
+          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '40' }}
+          APAC_MIN_HOP: ${{ inputs.apac_min_hop || '8' }}
         run: |
           python3 main.py \
             --out dist \
@@ -100,7 +101,8 @@ jobs:
             --speed-workers "$SPEED_WORKERS" \
             --speed-max "$SPEED_MAX" \
             --speed-bytes "$SPEED_BYTES" \
-            --apac-check-top "$APAC_CHECK_TOP"
+            --apac-check-top "$APAC_CHECK_TOP" \
+            --apac-min-hop "$APAC_MIN_HOP"
 
       - name: 校验产物
         run: |
