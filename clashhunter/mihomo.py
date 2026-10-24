@@ -43,6 +43,16 @@ from .web import FetchError, UA, fetch_json
 API_HOST = "127.0.0.1"
 API_PORT = 9090
 MIXED_PORT = 7891
+
+# 拿不到「最新 tag」时用哪个版本下载内核。
+#
+# 为什么需要这条退路：`_latest_tag()` 要问 api.github.com，而 CNB 的 runner 在
+# 国内 —— 那个接口不通的话，就拼不出任何下载地址，整条流水线会在「采集」阶段
+# 直接失败（现象是阶段秒红，日志还看不到）。这里钉一个实测可用的版本，
+# 保证「tag 查不到」只降级成「用旧一版」，不是「跑不起来」。
+# 想强制用某个版本：设环境变量 MIHOMO_TAG=v1.19.33。
+# 当前值对应的内核：`mihomo -v` → Mihomo Meta v1.19.33 (go1.26.10, 2026-10-21)
+PINNED_TAG = "v1.19.33"
 GROUP = "PROBE"
 TEST_URL = "http://www.gstatic.com/generate_204"
 # ⚠️ 这里的字节数是**模板占位符**，由 measure_speed() 用 max_bytes 填。
@@ -148,7 +158,17 @@ def _asset_candidates() -> list[tuple[str, str]]:
     raise FetchError(f"不支持的平台: {system}/{machine}")
 
 
-def _latest_tag() -> str | None:
+def _latest_tag(log=print) -> str | None:
+    """内核版本号。顺序：MIHOMO_TAG 环境变量 → GitHub API → releases/latest 重定向 → PINNED_TAG。
+
+    ⚠️ 最后一档不是可有可无的：api.github.com 在国内 runner 上可能不通，
+       没有它就只有「查不到 tag ⇒ 没有下载地址 ⇒ 整个采集阶段失败」这一种结局。
+    """
+    env_tag = (os.environ.get("MIHOMO_TAG") or "").strip()
+    if env_tag:
+        log(f"  内核版本由 MIHOMO_TAG 指定：{env_tag}")
+        return env_tag
+
     try:
         data = fetch_json(
             "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
@@ -172,7 +192,8 @@ def _latest_tag() -> str | None:
             return match.group(1)
     except Exception:  # noqa: BLE001
         pass
-    return None
+    log(f"  [warn] 查不到最新 tag，退回 PINNED_TAG={PINNED_TAG}")
+    return PINNED_TAG
 
 
 def ensure_binary(dest_dir: Path, *, log=print) -> Path:
@@ -193,7 +214,7 @@ def ensure_binary(dest_dir: Path, *, log=print) -> Path:
     env_url = os.environ.get("MIHOMO_URL")
     if env_url:
         urls.append(env_url)
-    tag = _latest_tag()
+    tag = _latest_tag(log=log)
     if tag:
         for sfx, fmt in _asset_candidates():
             name = f"mihomo-{sfx}-{tag}.{fmt}"
@@ -553,49 +574,30 @@ class Mihomo:
         workers: int = 16,
         batch_size: int = 150,
         base_port: int = LISTENER_BASE_PORT,
-        hop: dict | None = None,
         sources: list[tuple[str, str]] | None = None,
         log=print,
     ) -> dict[str, dict]:
         """分批给每个节点绑一个入站端口，并行测速 + 探出口 IP。
 
-        `hop` 非空时，每个被测节点都挂上 `dialer-proxy: <hop 名>`，链路变成
-        本机 → hop → 节点 → 目标站。hop 自己不进 ports，所以不占监听端口。
-
         `sources` 非空时每个节点对多个源各测一遍、取中位数（复测用）；
         为空则只打 `speed_url` 一个源（初筛用 —— 1400 个节点 × 多源太贵）。
-
-        ⚠️ 串起来的链路速度取「最慢的一段」，而 `本机 → hop` 这一段就在路径里
-        ⇒ **hop 自身的速度就是整轮测速的天花板**。它只适合回答
-        「这个节点从 hop 所在地区看是不是至少 X MB/s」，不能用来测出高于 hop 的速度。
         """
         results: dict[str, dict] = {}
         total = len(proxies)
         if not total:
             return results
-        hop_name = hop["name"] if hop else None
-        if hop_name and any(p["name"] == hop_name for p in proxies):
-            raise ValueError(f"跳板 {hop_name} 不能同时出现在被测节点里（会自我循环）")
         src_note = (f"，{len(sources)} 个源取中位数"
                     f"（{'/'.join(label for label, _ in sources)}）" if sources else "")
         log(f"  下载测速：{total} 个节点，并发 {workers}，"
             f"每个最多下 {speed_bytes / 1e6:.1f}MB，超时 {speed_timeout:.0f}s"
-            f"{src_note}"
-            + (f"，经跳板 {hop_name}" if hop_name else ""))
+            f"{src_note}")
 
         done = 0
         for offset in range(0, total, batch_size):
             targets = proxies[offset:offset + batch_size]
-            # 端口只按被测节点分配；跳板没有 listener，不占端口
             ports = {p["name"]: base_port + i for i, p in enumerate(targets)}
-            if hop:
-                # 每批都要把跳板重新放进 proxies —— mihomo 的 dialer-proxy 引用的是
-                # 同一份配置里的 proxy 名，跨批不共享。
-                batch = [hop] + [{**p, "dialer-proxy": hop_name} for p in targets]
-            else:
-                batch = targets
             try:
-                self.start(batch, ports, ready_port=base_port)
+                self.start(targets, ports, ready_port=base_port)
             except Exception as exc:  # noqa: BLE001
                 log(f"    [warn] 批次启动失败（跳过 {len(targets)} 个）: {exc}")
                 continue
@@ -608,7 +610,6 @@ class Mihomo:
                             speed_timeout=speed_timeout, ip_timeout=ip_timeout,
                             sources=sources,
                         ): p["name"]
-                        # 遍历 targets 而不是 batch：batch 里那个跳板没有端口
                         for p in targets
                     }
                     for future in as_completed(futures):

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -66,16 +65,6 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="测速源直连速度低于「最快那个的多少倍」就不采用。"
                              "源自己跑不动的速度，经它测出来的节点永远到不了")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
-    parser.add_argument("--apac-check-top", type=int, default=0,
-                        help="经一台亚太节点当跳板复测最快的多少个（0=不做交叉验证，默认关闭）。"
-                             "两轮实测都没拿到可信数据：跳板质量不够，"
-                             "40 个样本里 27 个经跳板完全测不出。想再试给 40")
-    parser.add_argument("--apac-check-workers", type=int, default=1,
-                        help="亚太复测并发。必须压到 1：跳板上行带宽是共享的，"
-                             "并发 4 会把所有节点一起压平（实测比值中位数掉到 0.09）")
-    parser.add_argument("--apac-min-hop", type=float, default=8.0,
-                        help="跳板直连速度低于这个值就跳过交叉验证（MB/s）。"
-                             "拿比被测节点慢的跳板去验证，测出来的只是跳板自己的上限")
 
     parser.add_argument("--max-nodes", type=int, default=80, help="最终最多保留多少个节点")
     parser.add_argument("--country-share", type=float, default=0.2,
@@ -130,9 +119,6 @@ def main(argv=None) -> int:
             refine_bytes=args.refine_bytes,
             speed_sources=args.speed_sources,
             source_min_ratio=args.source_min_ratio,
-            apac_check_top=args.apac_check_top,
-            apac_check_workers=args.apac_check_workers,
-            apac_min_hop=args.apac_min_hop,
             ip_timeout=args.ip_timeout,
             max_nodes=args.max_nodes,
             country_share=args.country_share,
@@ -157,10 +143,6 @@ def main(argv=None) -> int:
     for name, count in result.countries.items():
         log(f"  {name}: {count}")
 
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with open(summary, "a", encoding="utf-8") as fh:
-            fh.write(_step_summary(result))
     return 0
 
 
@@ -186,25 +168,6 @@ def _detect_vantage(out_dir: Path) -> str:
     if city:
         parts.append(city)
     return "·".join(parts)
-
-
-def _step_summary(result) -> str:
-    stats = result.stats
-    lines = [
-        "## 免费节点聚合结果",
-        "",
-        f"- 最终可用：**{stats.accepted}** 个节点，覆盖 **{len(result.countries)}** 个国家/地区",
-        f"- 测速位置：**{result.vantage or '未记录'}**（速度是该机器到节点的实测值）",
-        f"- 采集 {stats.raw} → 去重 {stats.unique} → TCP 存活 {stats.tcp_alive} → "
-        f"可加载 {stats.loadable} → 延迟可用 {stats.delay_ok} → 下载测速可用 {stats.speed_ok}",
-        "",
-        "| 地区 | 数量 |",
-        "| --- | ---: |",
-    ]
-    for name, count in result.countries.items():
-        lines.append(f"| {name} | {count} |")
-    lines.append("")
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

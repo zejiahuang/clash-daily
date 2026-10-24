@@ -10,7 +10,8 @@
 - 节点名格式：`日本-01-12.5MB/S`、`美国-03-8.4MB/S`、`中国香港-02-25.1MB/S`
   - 地区取自**实测出口 IP**，不是源站标注的国旗
   - 速度是**实测平均下载速度**（不含握手时间，见 §5），不是源站宣称值
-- 部署在 GitHub Actions，每天北京时间 02:00 自动更新
+- 部署在 **CNB（cnb.cool）**，runner 在中国大陆 —— 测速点就是使用者所在的位置。
+  每天北京时间 02:00 自动更新，产物提交回同一个仓库。
 
 > 本项目仅用于网络协议与自动化运维的技术学习，不保证任何节点可用性，请遵守所在地法律法规。
 
@@ -19,92 +20,105 @@
 ## 一、订阅地址
 
 ```
-https://raw.githubusercontent.com/<你的用户名>/<仓库名>/main/dist/clash.yaml
+https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/clash.yaml
 ```
 
-国内直连 `raw.githubusercontent.com` 经常被中断，建议用任一加速前缀：
+Base64 版本（部分客户端只认 base64 订阅）：
 
 ```
-https://gh-proxy.com/https://raw.githubusercontent.com/<用户>/<仓库>/main/dist/clash.yaml
-https://cdn.jsdelivr.net/gh/<用户>/<仓库>@main/dist/clash.yaml
+https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/clash.base64.txt
 ```
+
+> ⚠️ **CNB 的文件直链是 `/-/git/raw/<分支>/<路径>`，不是 `/-/raw/`。**
+> `/-/raw/...` 会返回 `200 text/html` 的前端页面（约 131 KB），客户端解析必然失败。
+> 实测判据：`curl -sI '.../-/git/raw/main/dist/clash.yaml'` 的
+> `Content-Type` 必须是 `text/plain`，`Content-Length` 要和仓库里那份一致（2026-10-24：34777 B）。
+> 这个坑记在 §8 的表格里 —— 之前正是因为测错了路径，才得出「CNB 不能当直链」的错误结论。
 
 ---
 
 ## 二、测速视角（重要）
 
 **速度是「测速机 → 节点」的速度，不是「你 → 节点」的速度。**
-GitHub 托管的 `ubuntu-latest` 跑在美西，所以默认测出来的是美西视角。
 
-工作流的第一步会把测速机的出口 IP 与归属地打印到日志，并写入
-`dist/runner-geo.json`，方便核对本次结果是什么视角：
+现在测速跑在 **CNB 的 runner（中国大陆）** 上，所以量出来的就是「国内 → 节点」。
+在此之前整条流水线跑在 GitHub 托管的 `ubuntu-latest`（美西），那时量到的是美西视角 ——
+§5 里所有带 run # 的历史数据都是美西视角下的读数，**换到 CNB 之后这些数字不再可比**，
+但当时得出的结论（分母地板、多源取中位数、单国上限……）与视角无关，仍然成立。
+
+流水线有一个「记录测速机位置」阶段，把出口 IP 与归属地写进 `dist/runner-geo.json`，
+订阅文件头部也会带一行：
 
 ```json
 {"status":"success","country":"United States","countryCode":"US",
  "regionName":"California","city":"San Jose","isp":"Microsoft Corporation"}
 ```
 
-### 换成亚太视角（self-hosted runner）
+（上面这份是当年美西 runner 的存档；现在应该是中国的城市。）
 
-需要一台香港 / 日本 / 新加坡的机器（1 核 2 GB 就够）。**代码一行不用改**，
-工作流里的 `runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}` 会自动跟随仓库变量。
+### 想换视角怎么办
 
-**① 取注册令牌**（有效期 1 小时）
+**换 runner 所在位置，不是改代码。** CNB 的托管 runner 在境内，这正是迁过来的原因；
+如果哪天要换成别的地区，只能在那边自建 runner —— 但要清楚代价：
+**那台机器的上行带宽会成为所有节点速度的天花板**（一台 100 Mbps 的 VPS 会让每个节点
+都测不出超过约 12 MB/s）。这是「拿速度上限换视角」，不是纯赚。
 
-```bash
-curl -sX POST -H "Authorization: Bearer <你的 PAT>" \
-  https://api.github.com/repos/zejiahuang/clash-daily/actions/runners/registration-token
-```
-
-也可以在仓库页面 **Settings → Actions → Runners → New self-hosted runner** 里取 `--token` 的值。
-
-**② 在亚太机器上跑安装脚本**
-
-```bash
-RUNNER_TOKEN=<上一步拿到的令牌> bash scripts/install-runner.sh
-```
-
-脚本做四件事：装依赖（curl/tar/git/python3）、下载对应架构的 runner、
-用标签 `asia` 注册、装成 systemd 服务并启动。
-
-**③ 确认上线**
-
-仓库 **Settings → Actions → Runners**，这台机器应显示 **Idle**，标签里能看到 `asia`。
-**这一步没确认之前不要设变量** —— 设了但 runner 不在线，任务会一直排队直到超时。
-
-**④ 打开开关**
-
-**Settings → Secrets and variables → Actions → Variables** 新建 `RUNNER_LABEL`，值 `asia`。
-
-**⑤ 验证视角真的变了**
-
-手动跑一次，看「记录测速机位置」那一步输出的国家。改之前是
-`United States / Virginia`，改成亚太 runner 后应该变成 `Hong Kong` / `Japan` / `Singapore`。
-`dist/runner-geo.json` 里也有同样的记录。
-
-> ⚠️ 公开仓库 + self-hosted runner 有已知风险：fork 发起的 PR 能在你的机器上执行任意代码。
-> 本项目的工作流**只挂了 `schedule` 和 `workflow_dispatch`，没有 `pull_request`**，
-> 所以外部无法触发。**后续不要给它加 PR 触发**，否则这台机器等于对外开放。
+> ⚠️ 历史教训：曾经试过两条「靠软件换视角」的路 ——
+> ① 在亚太机器上装 self-hosted runner（`RUNNER_LABEL=asia`，脚本已随 GitHub Actions 删除）；
+> ② 在本机用一台亚太节点当跳板串 `dialer-proxy`。
+> 两条都没成：前者受限于那台机器的带宽，后者受限于跳板的**上行**（见 §5）。
+> 结论：视角只能靠「测速机本身就在那个位置」。
 
 ---
 
-## 三、部署
+## 三、部署（CNB）
 
 ### 1. 推送代码
 
 ```bash
-git remote add origin https://github.com/<你的用户名>/<仓库名>.git
-git push -u origin main
+git remote add cnb https://cnb.cool/StriveGlory/clash-daily.git
+git push -u cnb main
 ```
 
-### 2. 开启 Actions 写权限
+### 2. 三个入口
 
-**Settings → Actions → General → Workflow permissions** 选
-**Read and write permissions**，否则最后一步无法把 `dist/` 提交回仓库。
+`.cnb.yml` 里定义了三件事，**同一份阶段列表**（YAML 锚点，改一处就全改）：
 
-### 3. 手动跑一次
+| 入口 | 触发方式 | 跑什么 | 耗时 |
+|---|---|---|---|
+| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 30~60 分钟 |
+| `web_trigger_daily` | 分支详情页的「立即跑一轮」按钮 | 全流程，参数可填 | 同上 |
+| `push` | 每次推代码 | **只跑环境自检**，不测速 | 约 1 分钟 |
 
-**Actions → 每日节点聚合 → Run workflow**，参数保持默认即可。
+按钮本身配置在 `.cnb/web_trigger.yml`，只有仓库写权限的人能点。
+
+> ⚠️ CNB 的 crontab **固定按 `Asia/Shanghai` 解释**，写 `0 2` 就是凌晨 2 点。
+> 但**容器本身仍是 UTC**，所以脚本里写日期必须显式 `TZ=Asia/Shanghai`。
+> 这两件事很容易混，混了的表现是提交信息里的时间差 8 小时。
+
+### 3. 产物怎么回写
+
+最后一步跑 `scripts/ci_commit.sh`：`git add dist` → 有变化才提交 → `git push`。
+默认凭据没有写权限时，脚本会退到 `https://cnb:${CNB_TOKEN}@...` 重试，
+两个都失败就把 `CNB_*` 环境变量打出来（变量名猜错时只能靠这个定位）。
+
+> ⚠️ **防自触发**：产物提交会再触发一次 `push` 构建。第二次构建里「上一提交的作者」
+> 就是 `cnb-bot`，`ci_commit.sh` 直接退出 —— 没有新提交，也就不会有第三次。
+> **不要删那个判断**，删了就是无限循环。
+
+### 4. 看不到日志时怎么办
+
+CNB 的构建日志是前端流式加载的（拉下来的 HTML 里没有日志正文），仓库令牌也读不到
+OpenAPI，所以「流水线红了」从外部往往只看到一个红的阶段名。
+
+为此 `push` 触发的那条流水线会把**环境自检**结果写成 `dist/probe.json` 提交回来：
+
+```bash
+curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
+```
+
+里面逐条记录：出口 IP / GitHub raw 直连与两个镜像 / 内核下载（Range 0–1 MB）/
+测速源 / 每个采集源站的第一次请求。**它只记录「哪次请求发生了什么」，不下结论。**
 
 ---
 
@@ -168,8 +182,7 @@ git push -u origin main
 | ④ 延迟测速 | 内核真实过一遍节点，拿端到端延迟（只用于排序，**不用来砍数量**） | 约 700–900 条 |
 | ⑤ 下载测速 | **全部延迟可用节点都测**，每节点绑一个独立入站端口，并行下载 6 MB，取平均 | 同时探测出口 IP |
 | ⑥ 复测 | 把初筛最快的 300 个用**低并发 + 24 MB + 多源取中位数**重测一次，同时消除抢带宽造成的低估、0.05 s 分母地板截断、单一源偏置 | 300 条 × 源数 |
-| ⑦ 亚太交叉验证 | 挑一台亚太节点当跳板，复测最快的 40 个，找「美西快、亚太慢」的节点。**默认关闭**，见 §5 | 40 条 |
-| ⑧ 挑选 + 重命名 | 按实测速度排，再按国家配额取前 80 | `地区-序号-速度MB/S` |
+| ⑦ 挑选 + 重命名 | 按实测速度排，再按国家配额取前 80 | `地区-序号-速度MB/S` |
 
 ### 为什么是「先全部测速，再挑」
 
@@ -179,7 +192,7 @@ git push -u origin main
 
 ```
 延迟测速（全部） → 下载测速（全部，6 MB 单源） → 源自检 → 复测（最快的 300，24 MB × 多源取中位数）
-→ 亚太交叉验证（最快的 40，默认关闭） → 按速度挑 80
+→ 按速度挑 80
 ```
 
 `--speed-max` 仍然保留，但它现在是**可选的时间上限**，默认 `0`（不截断）。
@@ -217,7 +230,7 @@ git push -u origin main
 > 这不是理论值 —— run #9 里就有 **5 个节点原始值完全相同、都是 38.15**，
 > 来自五个不同机房，唯一解释是它们都撞在这个上限上，真实速度测不出来。
 > 所以现在每节点下载 **6 MB**（上限 114.44 MB/s，38 MB/s 的节点能被测满 150 ms）。
-> 可用 `--speed-bytes` 调，工作流也暴露了 `speed_bytes` 输入。
+> 可用 `--speed-bytes` 调；`.cnb.yml` 里对应环境变量 `SPEED_BYTES`。
 >
 > 提高字节数的代价是流量与时间：1503 个节点 × 6 MB ≈ 9 GB/轮，主步骤耗时约 3 倍。
 >
@@ -249,7 +262,7 @@ git push -u origin main
 > 复测传给 `probe_all` 的字节数是复测量、复测失败不冲掉初筛值、
 > `build()` 与 `main.py` 的默认值不漂移。反证过：把复测换回初筛量，该测试立刻报错。
 >
-> 可用 `--refine-bytes` 调，工作流暴露了 `refine_bytes` 输入。
+> 可用 `--refine-bytes` 调；`.cnb.yml` 里对应 `REFINE_BYTES`，「立即跑一轮」按钮也能填。
 
 ### 复测对多个网站各测一遍，取中位数
 
@@ -353,15 +366,15 @@ git push -u origin main
 # 测速位置：美国·Phoenix（该速度是这台机器到节点的实测值，不代表你所在网络的速度）
 ```
 
-这一行由 `main.py` 从 `<out>/runner-geo.json` 读出来（工作流的「记录测速机位置」步骤
-在 `main.py` 之前写下这个文件），也可以用 `--vantage` 手动指定。读不到就整行不出现，
-不影响构建。`report.md` 和 Actions 的步骤摘要里也有同一行。
+这一行由 `main.py` 从 `<out>/runner-geo.json` 读出来（`.cnb.yml` 的「记录测速机位置」
+阶段在 `main.py` 之前写下这个文件），也可以用 `--vantage` 手动指定。读不到就整行不出现，
+不影响构建。`report.md` 里也有同一行。
 
-> ⚠️ **想换视角只能换机器。** GitHub 托管 runner 只有美国和欧洲，没有亚太选项。
-> 自托管亚太 runner 的路径是现成的（`scripts/install-runner.sh` ＋ 仓库变量
-> `RUNNER_LABEL=asia`），但**那台机器的上行带宽会成为所有节点速度的天花板**
-> —— 一台 100 Mbps 的 VPS 会让每个节点都测不出超过约 12 MB/s，
-> 而 GitHub 托管 runner 的管道粗得多。所以这是「拿速度上限换视角正确」，不是纯赚。
+> ⚠️ **想换视角只能换机器。** 视角 = runner 所在位置，代码改不了。
+> CNB 的托管 runner 在境内，这正是迁过来的原因；GitHub 托管 runner 只有美国和欧洲。
+> 自建 runner 换地区是可行的，但**那台机器的上行带宽会成为所有节点速度的天花板**
+> —— 一台 100 Mbps 的 VPS 会让每个节点都测不出超过约 12 MB/s。
+> 所以这是「拿速度上限换视角正确」，不是纯赚。
 
 ### 为什么地区要用出口 IP
 
@@ -396,76 +409,21 @@ mixed 端口，于是几百个节点能同时测。已实测：端口 7911 的�
 只要有一条 proxy 写错，mihomo 就拒绝加载整份配置。
 用二分而不是逐条试：200 条含 3 个坏条目，实测 15 次校验就能全部定位。
 
-### 为什么还要经亚太节点复测一次（**当前默认关闭**）
+### 为什么没有「亚太视角交叉验证」（已删除）
 
-直连测速走的是「**测速机 → 节点 → 目标站**」，而使用者走的是「**国内 → 节点 → 目标站**」。
-两段路完全不同：一个从美西看 112 MB/s 的节点，从亚太看可能只有 0.5 MB/s。
-这类节点在产物里完全看不出问题 —— 名字上写着 `XX-01-112.8MB/S`，装到手机上却打不开。
+曾经做过一版：挑一台亚太节点当跳板，用 `dialer-proxy` 串成
+「本机 → 跳板 → 节点 → 目标站」，把「美西快、亚太慢」的节点找出来。
+**两轮实测都没拿到可信数据，代码已整体删除**（`_apac_check`、`APAC_CODES`、
+`--apac-*` 三个参数、`tests/test_apac.py`，以及内核里的 `hop` 分支）。
 
-想法是对的，机制也成立（mihomo 的 `dialer-proxy` 就是链式代理）。但**两轮实测都没能
-拿到可信数据**，所以默认关掉了，代码和开关都留着。
+失败原因值得记下来：**跳板的瓶颈是上行带宽，不是它的下载速度。**
+数据流是「目标节点 → 跳板 → 本机」，跳板要把收到的再上传一次，而机场节点的上行
+普遍远低于下行。实测跳板直连 5.1 MB/s 时，经它测的节点没有一个超过 1.0；
+换成 11.1 MB/s 的跳板后，40 个样本里 27 个完全测不出。链路本身就是天花板，
+读数被压平之后「节点慢」和「链路慢」分不开 —— 判据再精巧也没用。
 
-#### 实测 run #12：一次被链路骗过的记录
-
-```
-亚太跳板选 n0867（直连 5.1 MB/s，候选池 137 台）—— 它的速度就是本轮天花板
-亚太/直连 比值中位数 0.09，0/102 个撞到天花板（≥4.6）
-⚠️ 疑似假阳性 9 个（直连 ≥3 但亚太 <1）：
-    n2136 直连 19.7 → 亚太 1.0
-```
-
-**「0/102 撞到天花板」和「中位数 0.09」是矛盾的。** 如果真被天花板压平，就该有
-一大批节点停在 4.6～5.1；实际一个都没有，全落在 1.0 附近 —— 而 `5.1 ÷ 4（并发）= 1.28`。
-所以那 9 个不是「亚太慢」，是**被跳板上行和并发分摊一起压平了**，判据完全失效。
-
-根因是我把瓶颈想错了：**跳板的瓶颈是上行带宽，不是它的下载速度**。数据流是
-「目标节点 → 跳板 → 本机」，跳板要把收到的再**上传**一次；机场节点的上行普遍远低于下行。
-
-#### 实测 run #13：加了防线之后，仍然不可用
-
-```
-亚太跳板选 n2039（直连 11.1 MB/s，候选池 127 台）
-经跳板复测 40 个（并发 1，每个 2MB）
-    ... 25/40，可用 3
-    ... 40/40，可用 13
-亚太/直连 比值中位数 0.30，0/13 个撞到天花板（≥10.0）
-没有发现「直连快但亚太慢」的节点
-```
-
-- **40 个里 27 个经跳板完全测不出**（前 25 个只成功 3 个，后 15 个成功 10 个）
-- 有读数的 13 个，比值中位数 0.30 —— 还是被压平，一个都没接近 11.1
-- 判据没报假阳性（这次是对的，因为没分辨力），但也等于**什么都没测出来**
-
-**结论：免费节点池里没有质量足够好的亚太跳板。** 本轮最快 11.1 MB/s（下行），
-上行更低，而且极不稳定。这不是代码能修的。
-
-#### 三道防线（想再试时它们保证你不会被假数据骗）
-
-| 防线 | 判据 | 作用 |
-|---|---|---|
-| 跳板门槛 | 跳板 < `--apac-min-hop`（默认 8 MB/s）直接跳过 | 拿比被测节点慢 4 倍的跳板去验证，测出来的只是跳板自己的上限 |
-| 并发固定 1 | `--apac-check-workers` 默认 1 | 那点上行不能分摊，4 个并发就会把所有读数压到同一水平 |
-| 分辨力自检 | 经跳板最快的都够不到天花板一半 ⇒ 不输出判断 | 无法区分「节点慢」和「链路慢」时，宁可不说话 |
-
-分辨力自检的日志长这样（这时**不会**再报假阳性）：
-
-```
-⚠️ 本轮无分辨力，不输出假阳性判断：经跳板最快只测到 1.0 MB/s，
-   而跳板直连 5.1 MB/s（比值 0.20 < 0.50）
-```
-
-要重新启用：`--apac-check-top 40 --apac-min-hop 8`。
-**判断它这次有没有用的唯一标准**是日志里出不出现「本轮无分辨力」——
-出现了就说明这轮数据不能信，别去读那几行假阳性。
-
-复测只下 2 MB 而不是 6 MB：经跳板的读数上限就是跳板速度，2 MB 足够，
-且不会撞 0.05 s 分母下限（`2 MB / 0.05 s = 38 MB/s`，远高于任何跳板天花板）。
-
-这一轮**只报告、不剔除**。
-
-> 真正的解法只有一条：**有一台自己的亚太机器**（远快于被测节点，50 MB/s 以上），
-> 或者干脆放弃「亚太视角」这个目标。前者要花钱，后者要接受「速度是美西视角」，
-> 靠订阅头部那行「测速位置」把这件事讲清楚。
+真正的解法只有一条：**测速机本身就在那个位置**（这正是迁到 CNB 的原因），
+而不是在测速机上再挂一跳。
 
 ---
 
@@ -497,13 +455,24 @@ python tests/test_parsers.py
 python tests/test_bisect.py
 python tests/test_speed_math.py
 python tests/test_refine.py
-python tests/test_apac.py
 python tests/test_selection.py
 python tests/test_sources.py
+python tests/test_web.py
 ```
 
-内核（mihomo）会自动下载；国内网络直连 GitHub 慢时，代码会依次尝试
-`cdn.akaere.online`、`gh-proxy.com` 镜像。也可用 `MIHOMO_BIN` 指定本地已有内核。
+`.cnb.yml` 里用的是 `for f in tests/test_*.py`，**新增测试文件不用改流水线**。
+
+内核（mihomo）会自动下载：先问 GitHub API 拿最新 tag，再依次试
+`github.com` 直连、`cdn.akaere.online`、`gh-proxy.com` 三个地址。
+也可用 `MIHOMO_BIN` 指定本地已有内核、用 `MIHOMO_TAG=v1.19.33` 钉死版本。
+
+> ⚠️ **查不到 tag 不会让流水线失败**：`_latest_tag()` 的最后一条退路是
+> `mihomo.PINNED_TAG`（当前 `v1.19.33`，实测 `mihomo -v` 就是这个版本）。
+> 没有这条退路时，国内 runner 上 `api.github.com` 一不通就「拼不出任何下载地址」，
+> 整条流水线会在采集阶段直接失败。
+>
+> 采集用的 GitHub 源站（`raw.githubusercontent.com`）同理：直连失败会自动换
+> 镜像前缀重试，`GH_MIRROR_PREFIX=""` 可关闭，判据在 `tests/test_web.py`。
 
 ---
 
@@ -515,139 +484,75 @@ python tests/test_sources.py
 | `dist/report.md` | 本次构建报告：各阶段数量、地区分布、速度 Top N |
 | `dist/report.json` | 同上，机器可读 |
 | `dist/runner-geo.json` | 测速机出口 IP 与归属地（判断测速视角） |
+| `dist/probe.json` | **只在 `push` 触发时生成**：runner 环境自检（见 §3.4） |
 
 ---
 
-## 八、平台选型记录（实测）
+## 八、平台选型与迁移记录（实测）
 
-做过一轮国内平台调研，结论留在这里，避免以后重复踩：
+做过两轮调研，结论留在这里，避免以后重复踩。**第二轮的结论推翻了第一轮的一条。**
 
 | 平台 | 免费 CI | 定时 | 能当配置直链吗 |
 |---|---|---|---|
-| GitHub Actions | 2000 分钟/月 | ✅ | ✅ raw 直链 |
-| Gitee | Gitee Go 需开通（有 200 分钟/仓库 + 500 分钟/月免费额度） | ✅ | ⚠️ raw 直链可用，但含 `vmess/vless/trojan` 的配置会被内容审核拦成 **451** |
-| AtomGit | 免费 | ✅ | ❌ `/-/raw/` 返回前端页面，不是文件内容 |
-| CNB（腾讯云） | 160 核时/月 | ✅ | ❌ 同上 |
+| **CNB（腾讯云）← 当前** | 160 核时/月 | ✅ `crontab:` | ✅ **`/-/git/raw/<分支>/<路径>`** |
+| GitHub Actions | 2000 分钟/月 | ✅ | ✅ raw 直链（但 runner 在美西，视角不对） |
+| Gitee | Gitee Go 需开通 | ✅ | ⚠️ 直链可用，但含 `vmess/vless/trojan` 会被审核拦成 **451** |
+| AtomGit | 免费（内测名额制） | ✅ | ❌ 12 种地址形式全试过，没有一种返回原文 |
 | 阿里云效 Flow | 3000 核分/月 | ✅ | ❌ |
 | 极狐 GitLab | 无免费额度 | — | ✅ |
 
-两个关键实测：
+### ⚠️ 曾经写错的一条：CNB 能不能当直链
 
-1. **国内平台只有 Gitee 提供真正的 raw 文本直链**（`Content-Type: text/plain`）。
-   AtomGit / CNB 的 `/-/raw/` 都返回 5–145 KB 的前端 HTML，Clash 拿到会解析失败。
-2. **Gitee 会按文件内容做审核**：纯 `ss` 配置返回 200，一旦含
-   `type: vmess` / `vless` / `trojan` 就返回 `451 The content may contain violation information`。
-   所以 Gitee 不能作为真实产物的分发地址。
+第一轮调研记的是「CNB 的 `/-/raw/` 返回前端页面 ⇒ 不能当直链」。**这是测错了路径得出的结论。**
 
----
-
-## 九、AtomGit 镜像（代码在，但**不能当订阅直链**）
-
-镜像仓库：<https://atomgit.com/StriveGlory/daily-config>
-
-### 为什么不能当订阅地址
-
-2026-10-24 实测了 **12 种**可能的 raw 地址形式，**没有一种返回文件原文**：
+CNB 的文件直链是 **`/-/git/raw/<分支>/<路径>`**，不是 `/-/raw/`。2026-10-24 逐条实测
+（被测文件是仓库里 14 字节的 `requirements.txt`）：
 
 | 地址形式 | 结果 |
 |---|---|
-| `atomgit.com/<o>/<r>/raw/main/<path>` | 200，`text/html` 5526 B（前端 SPA） |
-| `atomgit.com/<o>/<r>/-/raw/main/<path>` | 200，前端 SPA |
-| `atomgit.com/<o>/<r>/raw/branch/main/<path>` | 200，前端 SPA |
-| `atomgit.com/<o>/<r>/blob_plain/main/<path>` | 200，前端 SPA |
-| `raw.atomgit.com/<o>/<r>/main/<path>` | 200，前端 SPA |
-| `gitcode.com/<o>/<r>/raw/main/<path>` | 200，前端 SPA |
-| `raw.gitcode.com/<o>/<r>/raw/main/<path>` | 403 |
-| `api.atomgit.com/api/v5/repos/<o>/<r>/raw/main/<path>` | 404 |
-| `api.atomgit.com/api/v5/repos/<o>/<r>/download/<path>` | 404 |
-| `api.atomgit.com/api/v5/repos/<o>/<r>/contents/<path>?ref=main` | 200，但返回 **JSON**（`encoding: base64`） |
-| `.../contents/<path>?ref=main&raw=1` | 同上，仍是 JSON |
-| `.../blobs/main/<path>/raw` | 404 |
+| `.../-/raw/main/requirements.txt` | 200，`text/html` 131848 B（前端「Page not found」页） |
+| `.../-/raw/main/requirements.txt?inline=true` | 同上 |
+| `.../-/raw/main/requirements.txt?download=true` | 同上 |
+| `.../-/blob/main/requirements.txt?raw=true` | 200，`text/html` 206483 B |
+| `.../raw/main/requirements.txt` | **404** |
+| **`.../-/git/raw/main/requirements.txt`** | **200，`text/plain` 14 B —— 就是文件原文** |
 
-**根因**：AtomGit 是纯前端渲染（Vue SPA，资源全在 `cdn-static.gitcode.com`），
-服务端把所有 `/raw/` 路径都路由到前端入口，真正的文件内容由 JS 调
-`/api/v5/.../contents/...` 拿 base64 再在浏览器里解码。
-**服务端不存在任何「直接吐原文」的端点**，所以 Clash / 任何订阅客户端都拿不到。
-唯一能取到原文的接口是 contents API，但它是 JSON 包着 base64 —— 客户端不认。
+订阅文件的判据：`.../-/git/raw/main/dist/clash.yaml` 返回 `200 text/plain`、34777 B，
+与仓库里那份逐字节一致。
 
-⇒ **订阅地址必须继续放在 GitHub**（`raw.githubusercontent.com`）。
-AtomGit 这边只是**代码镜像 + 产物存档**，供人浏览，不能订阅。
+> 教训：**「某个平台不支持 X」这种结论，必须把「试过的地址形式」和「返回的 Content-Type /
+> 字节数」一起记下来。** 只写一句「返回前端页面」，下一次就没法判断是平台不行还是路径不对 ——
+> 这一次正是靠「12 种形式 + 状态码 + 大小」才敢回头重测，并且发现结论是错的。
 
-### 一个反直觉的发现：AtomGit 不拦内容
+### Gitee 的另一条实测
 
-Gitee 会按文件内容审核（含 `vmess/vless/trojan` 就 451），但 AtomGit **完全不拦**：
-23 个文件全部上传成功，包括 `dist/clash.yaml`（含 vmess/vless/trojan 节点）
-和 `uri.py`（源码里有 `vmess://` 字符串）。
+**Gitee 会按文件内容审核**：纯 `ss` 配置返回 200，一旦含 `type: vmess` / `vless` / `trojan`
+就返回 `451 The content may contain violation information`。所以它不能作为真实产物的分发地址。
 
-但**仓库名会被拦**：`clash-daily` 报「项目名称,路径存在违规内容」，
-换成 `daily-config` 才建成。所以仓库叫 `daily-config`，不是 `clash-daily`。
+### AtomGit 为什么彻底放弃
 
-### 怎么同步过去
+镜像仓库曾是 <https://atomgit.com/StriveGlory/daily-config>。它的问题是**结构性的**：
+纯前端渲染（Vue SPA），服务端把所有 `/raw/` 路径都路由到前端入口，真正的文件内容由 JS 调
+`/api/v5/.../contents/...` 拿 base64 再在浏览器里解码 —— **服务端不存在「直接吐原文」的端点**，
+所以 Clash / 任何订阅客户端都拿不到。12 种地址形式的实测结果保留在 git 历史里
+（`git log -p --follow README.md`），`.gitcode/` 工作流和 `scripts/push_to_github.py` 一起删掉了。
 
-```bash
-ATOM_TOKEN=<你的 AtomGit 个人访问令牌> python .local-tools/sync_atomgit.py
-```
+顺带一条反直觉的发现：**AtomGit 不拦内容**（23 个文件全部上传成功，包括含 vmess 的
+`dist/clash.yaml`），但**仓库名会被拦** —— `clash-daily` 报「项目名称,路径存在违规内容」，
+换成 `daily-config` 才建成。
 
-脚本逐文件比对内容（`GET /contents/{path}` 拿 sha + base64 内容），只传有变化的，
-并把 `dist/` 里的最新产物一并带上。注意 AtomGit 的认证头是 **`PRIVATE-TOKEN`**
-（`Authorization: token xxx` 会 401，`Authorization: Bearer xxx` 也行）。
+### 迁移到 CNB 时改了什么
 
----
-
-## 十、在 AtomGit 跑 CI（为了「中国大陆视角」测速）
-
-GitHub 托管 runner 在美东，测出来是美东视角。AtomGit 的 runner 在国内，
-所以**真正值得在 AtomGit 跑的是测速那一步**，产物再推回 GitHub（因为 AtomGit 不能当直链）。
-
-### 配置路径与语法（实测，不是猜的）
-
-| 项 | 值 |
-|---|---|
-| 配置文件目录 | **`.gitcode/workflows/*.yml`**（不是 `.atomgit/workflows/`，也不是 `.github/workflows/`） |
-| 托管 runner | `runs-on: default` == `[ubuntu-latest, x64, small]`（2 核 8 GB） |
-| 可选规格 | `slim`(1C4G) / `small`(2C8G) / `medium`(4C16G) / `large`(8C32G) / `xlarge`(16C64G) / `2xlarge`(32C128G) |
-| 标签写法 | 三段式 `[os, arch, flavor]`，如 `[ubuntu-latest, x64, medium]`；`arch` 可为 `arm64` |
-| 预装 | Python 3.x、Node 18/20、Go 1.21+、Java 11/17/21、make/cmake/mvn/gradle/pip、git |
-| 定时 | `on.schedule[].cron`，**POSIX cron，UTC 时间**，最短间隔 5 分钟 |
-| 手动 | `on.workflow_dispatch` + `inputs`（支持 string/boolean/choice/number） |
-| 检出代码 | `uses: checkout`（裸 action 名，不是 `actions/checkout@v4`） |
-| 上下文 | `${{ atomgit.sha }}` / `${{ atomgit.event... }}`；环境变量 `ATOMGIT_*` |
-| Secrets / Variables | `${{ secrets.X }}` / `${{ vars.X }}`，在仓库设置里配 |
-
-> ⚠️ **前提：流水线是内测名额制**。官方文档「快速开始」第一行写着
-> 「申请获取代码化流水线内测名额（内测名额有限，详情请咨询 AtomGit 客服）」。
-> 没拿到名额的话，`.gitcode/workflows/` 里的文件**不会被识别**，仓库的「流水线」标签页也不会有记录。
-
-### 两步走
-
-**第一步：探测（`.gitcode/workflows/probe-runner.yml`）**
-
-这一步必须先跑，因为它决定方案成不成立：
-
-- runner 的出口 IP 与归属地 → 确认是不是国内视角
-- **能不能访问 `api.github.com`** → 不能的话，产物根本推不回 GitHub，
-  而 AtomGit 自己又不能当直链 ⇒ 整个方案作废
-- 能不能下载 mihomo、能不能访问 10 个源站和测速端点
-
-触发方式：推送这个文件本身（`paths` 过滤），或手动 `workflow_dispatch`。
-
-**第二步：每日流水线（`.gitcode/workflows/daily-nodes.yml`）**
-
-跑完 `main.py` 后调 `scripts/push_to_github.py` 把 `dist/` 写回 GitHub。需要两个配置：
-
-| 类型 | 名称 | 值 |
+| 项 | 之前（GitHub） | 现在（CNB） |
 |---|---|---|
-| Secret | `GH_TOKEN` | 一个有 `repo` 权限的 GitHub 令牌 |
-| Variable | `GITHUB_REPO` | `zejiahuang/clash-daily` |
+| CI 配置 | `.github/workflows/daily-nodes.yml` | `.cnb.yml` |
+| 手动触发 | `workflow_dispatch` | `.cnb/web_trigger.yml` 里的按钮（`web_trigger_daily`） |
+| 定时 | `cron: "0 18 * * *"`（UTC） | `"crontab: 0 2 * * *"`（Asia/Shanghai） |
+| 提交回写 | workflow 内联 `git push` | `scripts/ci_commit.sh`（三个入口共用） |
+| 产物校验 | workflow 内联 heredoc | `scripts/verify_dist.py` |
+| 看不到日志时 | `upload-artifact` + 步骤摘要 | `push` 触发的 `dist/probe.json` 环境自检 |
+| 测速视角 | 美西（runner 所在地） | **中国大陆** |
 
-**两者缺任一不会让流水线失败** —— `push_to_github.py` 会打印「跳过」并返回 0，
-产物仍留在 AtomGit 仓库的 `dist/` 里（能看，不能订阅）。
-
-### ⚠️ 两个 cron 会互相覆盖
-
-GitHub 的 `daily-nodes.yml` 也是 UTC 18:00。如果 AtomGit 这边跑通了，
-**必须把 GitHub 那个的 `schedule` 注释掉**（保留 `workflow_dispatch` 作兜底），
-否则两边同时间各跑一次，谁后提交谁覆盖，测速视角会在「美东」和「国内」之间随机跳。
-
-`scripts/push_to_github.py` 的提交信息带「AtomGit 测速结果」前缀，
-`git log --oneline dist/` 能看出最后一次是谁写的。
+> ⚠️ **两个 cron 会互相覆盖**：CNB 的 `0 2`（Asia/Shanghai）等于 GitHub 的 `0 18`（UTC），
+> 是**同一时刻**。迁移时 GitHub 的 `schedule` 已经注释掉；如果哪天两边都开，
+> 谁后提交谁覆盖，测速视角会在两个地区之间随机跳。

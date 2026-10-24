@@ -254,7 +254,12 @@ def _fetch_articles(candidates: list[tuple[date, str]], *, max_articles: int,
     articles: list[str] = []
     for _, article_url in candidates[:max_articles]:
         try:
-            html = fetch(article_url, referer=origin_of(article_url))
+            # 文章抓取是「探测性」的：candidates 里还有别的日期，失败就换下一篇。
+            # 所以这里**不重试、超时也压短** —— 默认的 3 次重试 × 30 s = 95 s，
+            # 乘上 3 篇就是 4 分钟全用来等超时（实测 lancex 当天那篇握手超时，
+            # 下一篇就正常，白等了 4 分钟）。
+            html = fetch(article_url, referer=origin_of(article_url),
+                         retries=1, timeout=20)
         except FetchError as exc:
             log(f"    [warn] 文章抓取失败 {article_url}: {exc}")
             continue

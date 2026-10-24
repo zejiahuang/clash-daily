@@ -1,0 +1,30 @@
+# 「立即跑一轮」按钮 —— 分支详情页（代码 → main）右侧会出现。
+#
+# 事件名 web_trigger_daily 必须与 .cnb.yml 里 main: 下的同名键完全一致。
+# inputs 的键名就是流水线里的环境变量名，所以这里直接用 .cnb.yml 读的那几个名字。
+#
+# ⚠️ 只有仓库写权限的人能点这个按钮。
+
+branch:
+  - buttons:
+      - name: 立即跑一轮
+        description: 采集 → 测速 → 生成配置 → 提交回仓库。约 30~60 分钟，测速流量约 20 GB。
+        event: web_trigger_daily
+        isDefault: true
+        inputs:
+          MAX_NODES:
+            name: 最终保留节点数
+            type: input
+            default: "80"
+          REFINE_TOP:
+            name: 复测最快的多少个（0 = 不复测）
+            type: input
+            default: "300"
+          REFINE_BYTES:
+            name: 复测每节点下载字节数
+            type: input
+            default: "24000000"
+          SPEED_SOURCES:
+            name: 复测对几个源各测一遍取中位数（0 = 单源）
+            type: input
+            default: "3"

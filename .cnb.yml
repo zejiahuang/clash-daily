@@ -1,25 +1,30 @@
-# CNB 流水线（cnb.cool）
+# CNB 流水线（cnb.cool）—— 本项目唯一的 CI，GitHub Actions 已全部迁走。
 #
-# 为什么在 CNB 上跑：runner 在中国大陆，**测速点就是使用者所在的位置**。
-# 之前在 GitHub runner（美西）上，无论怎么设计都绕不过「测出来的速度是
-# 美西→节点 的速度」这件事 —— 那正是「让国外网站替我们判断」一系列尝试的起点。
-# 换到国内 runner 之后，那类绕行方案不再需要。
+# 为什么在国内 runner 上跑：测速点必须和使用者在一起。之前在 GitHub runner
+# （美西）上，无论怎么设计都绕不过「测出来的速度是 美西→节点 的速度」。
 #
-# ⚠️ 时区：CNB 的 crontab **固定按 Asia/Shanghai 解释**，所以这里写 `0 2` 就是
-#    北京时间 02:00。GitHub Actions 那边是 UTC，写的是 `0 18 * * *`。
-#    两边不要互相抄 —— 抄过去会差 8 小时。
+# 三个入口：
+#   1. web_trigger_daily —— 分支详情页的「立即跑一轮」按钮，参数可填
+#                           （按钮本身配置在 .cnb/web_trigger.yml）
+#   2. crontab 0 2       —— 每天北京时间 02:00 自动跑。
+#                           ⚠️ CNB 的 crontab **固定按 Asia/Shanghai 解释**，写 0 2 就是凌晨 2 点。
+#   3. push              —— **只跑环境自检，不测速**（1 分钟内），
+#                           结果写到 dist/probe.json 提交回来。见 scripts/probe_env.py。
 #
 # ⚠️ 容器时区与 crontab 时区是两件事：crontab 由平台按 Asia/Shanghai 求值，
 #    容器本身仍是 UTC，所以脚本里写日期必须显式 `TZ=Asia/Shanghai`。
+#
+# ⚠️ 阶段列表用 YAML 锚点（&daily_stages / *daily_stages）只写一份。CNB 拿到的是
+#    标准 YAML，锚点在平台看到之前就已经展开。改完务必本地验一遍：
+#      python -c "import yaml;d=yaml.safe_load(open('.cnb.yml'));print(list(d['main']))"
 
 main:
-  # ⚠️ 临时：这一段只为「推一次就验证整条链路」，确认跑通后要删掉，
-  #    否则每次 push 都会跑一轮 20 GB 的测速。
-  push:
-    - name: daily-nodes-on-push
+  # ---------- 入口 1：手动触发（按钮见 .cnb/web_trigger.yml）----------
+  web_trigger_daily:
+    - name: daily-nodes-manual
       docker:
         image: python:3.11
-      stages:
+      stages: &daily_stages
         - name: 安装依赖
           script: |
             set -e
@@ -29,18 +34,33 @@ main:
         - name: 单元测试
           script: |
             set -e
-            python tests/test_parsers.py
-            python tests/test_bisect.py
-            python tests/test_speed_math.py
-            python tests/test_refine.py
-            python tests/test_apac.py
-            python tests/test_selection.py
-            python tests/test_sources.py
+            for f in tests/test_*.py; do
+              echo "--- $f"
+              python "$f"
+            done
+
+        - name: 记录测速机位置
+          script: |
+            # 失败不影响主流程：拿不到就只是产物头部少一行「测速位置」
+            # ⚠️ 先删掉仓库里那份 —— 它是上一次运行的存档，不删的话
+            #    「拿不到 IP」会静默沿用旧值，日志里就会显示一个错的测速位置
+            #    （实测：CNB 上跑出了「美国·Boydton」，那是 GitHub runner 的旧数据）。
+            rm -f dist/runner-geo.json
+            IP=$(curl -s --max-time 10 https://api.ipify.org || echo "")
+            if [ -n "$IP" ]; then
+              GEO=$(curl -s --max-time 10 \
+                "http://ip-api.com/json/${IP}?fields=status,country,countryCode,regionName,city,isp" \
+                || echo "{}")
+              echo "runner egress: $IP  $GEO"
+              mkdir -p dist
+              echo "$GEO" > dist/runner-geo.json
+            else
+              echo "拿不到 runner 出口 IP，本轮不写测速位置"
+            fi
 
         - name: 采集 · 测速 · 生成配置
           script: |
             set -e
-            # 参数与 GitHub 那条流水线保持同一组默认值，改一处必须对照另一处
             python main.py \
               --out dist \
               --work work \
@@ -59,119 +79,34 @@ main:
           script: |
             set -e
             test -s dist/clash.yaml || { echo "dist/clash.yaml 未生成"; exit 1; }
-            # 断言写在 scripts/verify_dist.py 里，GitHub 那条流水线跑的是同一份
             python scripts/verify_dist.py --path dist/clash.yaml
 
         - name: 提交回仓库
           script: |
-            set -e
-            # 防自触发死循环：上一提交如果是本机器人写的产物提交，就别再提交一次。
-            # 不依赖平台是否支持 [skip ci] —— 那个约定在 CNB 上未经验证。
-            if [ "$(git log -1 --format=%ae)" = "cnb-bot@cnb.cool" ]; then
-              echo "上一提交就是产物提交，跳过（防自触发）"
-              exit 0
-            fi
-            git config user.name  "cnb-bot"
-            git config user.email "cnb-bot@cnb.cool"
-            git add dist
-            if git diff --cached --quiet; then
-              echo "内容无变化，跳过提交"
-              exit 0
-            fi
-            git commit -m "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 [skip ci]"
+            bash scripts/ci_commit.sh \
+              "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间"
 
-            # 检出用的凭据不一定有写权限（CI 里很常见）。先试默认，失败再显式带 CNB_TOKEN。
-            # ⚠️ 失败时必须把 CNB_* 环境变量打出来 —— 变量名猜错的话，
-            #    下次还是错的；打出来才知道真名。
-            if git push; then
-              exit 0
-            fi
-            echo "默认 push 失败，改用 CNB_TOKEN 重试"
-            if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then
-              echo "===== 拼不出带凭据的地址，打印环境以便定位 ====="
-              env | grep -i '^CNB_' | sed 's/\(TOKEN[A-Z_]*=\).*/\1***/' | sort
-              exit 1
-            fi
-            base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
-            git push "https://cnb:${CNB_TOKEN}@${base#https://}"
-
-  # 每天北京时间 02:00（CNB 的 crontab 固定按 Asia/Shanghai 解释）
+  # ---------- 入口 2：每天北京时间 02:00 ----------
   "crontab: 0 2 * * *":
     - name: daily-nodes
       docker:
         image: python:3.11
+      stages: *daily_stages
+
+  # ---------- 入口 3：push 只跑自检，不测速 ----------
+  # 每次推代码都会跑一遍（约 1 分钟）。它的产物 dist/probe.json 是「流水线红了
+  # 但看不到日志」时唯一能读到的证据，所以不要删。
+  push:
+    - name: env-probe
+      docker:
+        image: python:3.11
       stages:
-        - name: 安装依赖
+        - name: 环境自检
           script: |
             set -e
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
-
-        - name: 单元测试
-          script: |
-            set -e
-            python tests/test_parsers.py
-            python tests/test_bisect.py
-            python tests/test_speed_math.py
-            python tests/test_refine.py
-            python tests/test_apac.py
-            python tests/test_selection.py
-            python tests/test_sources.py
-
-        - name: 采集 · 测速 · 生成配置
-          script: |
-            set -e
-            # 参数与 GitHub 那条流水线保持同一组默认值，改一处必须对照另一处
-            python main.py \
-              --out dist \
-              --work work \
-              --max-nodes "${MAX_NODES:-80}" \
-              --speed-max "${SPEED_MAX:-0}" \
-              --speed-workers "${SPEED_WORKERS:-32}" \
-              --refine-top "${REFINE_TOP:-300}" \
-              --refine-workers "${REFINE_WORKERS:-16}" \
-              --refine-bytes "${REFINE_BYTES:-24000000}" \
-              --speed-sources "${SPEED_SOURCES:-3}" \
-              --source-min-ratio "${SOURCE_MIN_RATIO:-0.4}" \
-              --speed-bytes "${SPEED_BYTES:-6000000}" \
-              --delay-timeout "${DELAY_TIMEOUT:-5000}"
-
-        - name: 校验产物
-          script: |
-            set -e
-            test -s dist/clash.yaml || { echo "dist/clash.yaml 未生成"; exit 1; }
-            # 断言写在 scripts/verify_dist.py 里，GitHub 那条流水线跑的是同一份
-            python scripts/verify_dist.py --path dist/clash.yaml
+            python scripts/probe_env.py --out dist/probe.json
 
         - name: 提交回仓库
           script: |
-            set -e
-            # 防自触发死循环：上一提交如果是本机器人写的产物提交，就别再提交一次。
-            # 不依赖平台是否支持 [skip ci] —— 那个约定在 CNB 上未经验证。
-            if [ "$(git log -1 --format=%ae)" = "cnb-bot@cnb.cool" ]; then
-              echo "上一提交就是产物提交，跳过（防自触发）"
-              exit 0
-            fi
-            git config user.name  "cnb-bot"
-            git config user.email "cnb-bot@cnb.cool"
-            git add dist
-            if git diff --cached --quiet; then
-              echo "内容无变化，跳过提交"
-              exit 0
-            fi
-            git commit -m "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 [skip ci]"
-
-            # 检出用的凭据不一定有写权限（CI 里很常见）。先试默认，失败再显式带 CNB_TOKEN。
-            # ⚠️ 失败时必须把 CNB_* 环境变量打出来 —— 变量名猜错的话，
-            #    下次还是错的；打出来才知道真名。
-            if git push; then
-              exit 0
-            fi
-            echo "默认 push 失败，改用 CNB_TOKEN 重试"
-            if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then
-              echo "===== 拼不出带凭据的地址，打印环境以便定位 ====="
-              env | grep -i '^CNB_' | sed 's/\(TOKEN[A-Z_]*=\).*/\1***/' | sort
-              exit 1
-            fi
-            base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
-            git push "https://cnb:${CNB_TOKEN}@${base#https://}"
+            bash scripts/ci_commit.sh \
+              "chore(probe): 环境自检 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')"
