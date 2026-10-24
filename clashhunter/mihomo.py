@@ -395,7 +395,7 @@ class Mihomo:
         return None
 
     def measure_speed(self, port: int, url: str = SPEED_URL,
-                      max_bytes: int = 2_000_000, timeout: float = 10.0) -> float:
+                      max_bytes: int = 6_000_000, timeout: float = 10.0) -> float:
         """下载一段固定大小的数据，返回**平均**速度（MB/s）。失败返回 0。
 
         ⚠️ 平均值的分母必须从「收到第一个字节」算起，不能从发请求算起。
@@ -447,7 +447,7 @@ class Mihomo:
         proxies: list[dict],
         *,
         speed_url: str = SPEED_URL,
-        speed_bytes: int = 2_000_000,
+        speed_bytes: int = 6_000_000,
         speed_timeout: float = 10.0,
         ip_timeout: float = 6.0,
         workers: int = 16,
