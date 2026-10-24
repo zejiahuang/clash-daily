@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 import time
 from pathlib import Path
@@ -306,6 +307,23 @@ def test_exit_ip_total_budget(problems: list[str]) -> None:
         problems.append(f"传给 open 的超时里有非正数：{timeouts}")
 
 
+def test_probe_env_threshold_no_drift(problems: list[str]) -> None:
+    """`probe_env.py` 的门槛必须与 `builder.SOURCE_MIN_MBS` 一致。
+
+    那个脚本跑在 `pip install` 之前，只能抄一份常量；抄错了不会报错，
+    只会让「报告里的结论」和「流水线实际怎么做」对不上 —— 而人只会读报告。
+    """
+    text = (ROOT / "scripts" / "probe_env.py").read_text(encoding="utf-8")
+    match = re.search(r"^PIPE_MIN_MBS\s*=\s*([0-9.]+)", text, re.M)
+    if not match:
+        problems.append("probe_env.py 里找不到 PIPE_MIN_MBS")
+        return
+    got = float(match.group(1))
+    if abs(got - SOURCE_MIN_MBS) > 1e-9:
+        problems.append(f"probe_env.PIPE_MIN_MBS={got} 与 builder.SOURCE_MIN_MBS="
+                        f"{SOURCE_MIN_MBS} 不一致 —— 报告结论会和流水线实际行为相反")
+
+
 def main() -> int:
     problems: list[str] = []
     test_fit_narrow(problems)
@@ -322,6 +340,7 @@ def main() -> int:
     test_selfcheck_before_screen(problems)
     test_exit_ip_total_budget(problems)
     test_probe_budget(problems)
+    test_probe_env_threshold_no_drift(problems)
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:

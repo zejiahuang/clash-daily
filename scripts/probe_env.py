@@ -230,6 +230,11 @@ BW_BYTES = 6_000_000
 BW_TIMEOUT = 6.0
 BW_CONNS = 6
 
+# ⚠️ 必须与 `clashhunter/builder.py` 的 `SOURCE_MIN_MBS` 一致 —— 这里不能 import
+# （本脚本跑在 pip install 之前，只能用标准库）。`tests/test_pipe.py` 有一条断言
+# 盯着这两个数，改一处而漏另一处会被测出来。
+PIPE_MIN_MBS = 20.0
+
 
 def _pull(url: str, *, max_bytes: int, timeout: float) -> dict:
     """读一段数据，返回 {bytes, first, last, err}。时刻用 monotonic（跨线程可比）。"""
@@ -296,13 +301,19 @@ def bandwidth() -> dict:
 
 
 def _verdict(single: float, agg: float, ratio: float | None) -> str:
+    """一句话结论。**结论必须和 `builder._fit_to_pipe` 用的是同一个门槛**，
+    否则这里说「不用压并发」而流水线里其实压了 —— 报告和代码各说各话。"""
     if agg <= 0:
         return "并发自检没读到数据 —— 管道宽度未知，测速环节只能沿用默认参数"
     if ratio and ratio > 1.5:
-        return (f"单连接被限速（并发/单连 {ratio}×），管道 ≈ {agg:.2f} MB/s "
-                f"⇒ 初筛不需要压并发")
-    return (f"并发没有提升（{ratio}×），出口总带宽 ≈ {agg:.2f} MB/s "
-            f"⇒ 初筛必须压并发和每节点下载量，否则整片超时")
+        note = f"单连接被限速（并发/单连 {ratio}×），管道按并发总量算；"
+    else:
+        note = f"并发没有提升（{ratio}×），出口总带宽就是这么多；"
+    if agg < PIPE_MIN_MBS:
+        return (f"{note}管道 ≈ {agg:.2f} MB/s < 门槛 {PIPE_MIN_MBS:.0f} "
+                f"⇒ 初筛会压到 1 并发 × 1 MB，读数天花板就是这条管道")
+    return (f"{note}管道 ≈ {agg:.2f} MB/s ≥ 门槛 {PIPE_MIN_MBS:.0f} "
+            f"⇒ 初筛不压并发，只按「超时的一半」收")
 
 
 def main() -> int:
