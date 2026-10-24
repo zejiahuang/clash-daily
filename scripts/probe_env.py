@@ -21,6 +21,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -222,6 +223,88 @@ def system_info() -> dict:
     return out
 
 
+# 管道自检：6 MB 落在 Cloudflare 的「11~20 MB 稳定 403」区间之外，
+# 6 秒墙钟封顶，所以单连接 + 6 并发两轮最多 ~12 秒。
+BW_URL = "https://speed.cloudflare.com/__down?bytes={bytes}"
+BW_BYTES = 6_000_000
+BW_TIMEOUT = 6.0
+BW_CONNS = 6
+
+
+def _pull(url: str, *, max_bytes: int, timeout: float) -> dict:
+    """读一段数据，返回 {bytes, first, last, err}。时刻用 monotonic（跨线程可比）。"""
+    if "{bytes}" in url:
+        url = url.replace("{bytes}", str(max_bytes))
+    req = urllib.request.Request(
+        url, headers={"User-Agent": UA, "Accept": "*/*", "Connection": "close"})
+    started = time.monotonic()
+    total = 0
+    first = last = 0.0
+    err = None
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            while total < max_bytes:
+                chunk = resp.read(min(65536, max_bytes - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                last = time.monotonic()
+                if not first:
+                    first = last
+                if last - started > timeout:
+                    break
+    except Exception as exc:  # noqa: BLE001
+        err = f"{type(exc).__name__}: {exc}"
+    return {"bytes": total, "first": first, "last": last, "err": err}
+
+
+def _aggregate(url: str, *, conns: int, max_bytes: int, timeout: float) -> dict:
+    with ThreadPoolExecutor(max_workers=max(1, conns)) as pool:
+        rows = list(pool.map(
+            lambda _i: _pull(url, max_bytes=max_bytes, timeout=timeout),
+            range(max(1, conns))))
+    got = [r for r in rows if r["bytes"] > 0 and r["first"]]
+    total = sum(r["bytes"] for r in got)
+    first = min((r["first"] for r in got), default=0.0)
+    last = max((r["last"] for r in got), default=0.0)
+    span = max(last - first, 0.05) if first else 0.0
+    return {"conns": conns, "ok": len(got), "bytes": total,
+            "mbps": round(total / 1048576 / span, 2) if span else 0.0,
+            "errs": sorted({r["err"] for r in rows if r["err"]})}
+
+
+def bandwidth() -> dict:
+    """单连接 vs 并发总量 —— 分开量「按连接限速」和「出口真窄」。
+
+    为什么必须分开：单连接 1 MB/s 有两种完全相反的解释 ——
+      ① 出口总带宽就是 1 MB/s ⇒ 32 并发 × 6 MB 必然整片超时；
+      ② 只是每条连接被限到 1 MB/s ⇒ 并发能拿到接近 K 倍，32 并发完全跑得动。
+    两者的修法相反，所以一个数不能当另一个用。
+
+    ⚠️ 2026-10-24 单连接 1.06 MB/s 而日志是「下载测速可用 0/354」，
+       这两件事**互相解释不了**：若管道真是 1 MB/s 被 32 并发均分，
+       每个节点 10 秒还能读到约 300 KB、算出 0.03 MB/s，会被计为「可用」。
+       0 只出现在「一个字节都没读到」或「不到 64 KB」。所以那个 0 至今原因未定，
+       探因靠 mihomo.measure_speed_ex() 带出来的失败原因。
+    """
+    single = _aggregate(BW_URL, conns=1, max_bytes=BW_BYTES, timeout=BW_TIMEOUT)
+    many = _aggregate(BW_URL, conns=BW_CONNS, max_bytes=BW_BYTES, timeout=BW_TIMEOUT)
+    ratio = round(many["mbps"] / single["mbps"], 2) if single["mbps"] > 0 else None
+    return {"url": BW_URL, "bytes": BW_BYTES, "timeout": BW_TIMEOUT,
+            "single": single, "many": many, "ratio": ratio,
+            "verdict": _verdict(single["mbps"], many["mbps"], ratio)}
+
+
+def _verdict(single: float, agg: float, ratio: float | None) -> str:
+    if agg <= 0:
+        return "并发自检没读到数据 —— 管道宽度未知，测速环节只能沿用默认参数"
+    if ratio and ratio > 1.5:
+        return (f"单连接被限速（并发/单连 {ratio}×），管道 ≈ {agg:.2f} MB/s "
+                f"⇒ 初筛不需要压并发")
+    return (f"并发没有提升（{ratio}×），出口总带宽 ≈ {agg:.2f} MB/s "
+            f"⇒ 初筛必须压并发和每节点下载量，否则整片超时")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="CNB runner 环境自检")
     ap.add_argument("--out", default="dist/probe.json")
@@ -235,6 +318,7 @@ def main() -> int:
         "github": github_checks(),
         "kernel": kernel_checks(),
         "speed_source": [probe(SPEED_URL, limit=1048576)],
+        "bandwidth": bandwidth(),
         "sources": [_probe_source(u) for u in source_urls()],
     }
     report["elapsed_s"] = round(time.monotonic() - started, 1)
@@ -267,6 +351,14 @@ def main() -> int:
           f"pinned={report['kernel']['tag_pinned']} used={report['kernel']['tag_used']}")
     show("内核下载（Range 0-1MB）", report["kernel"]["rows"])
     show("测速源", report["speed_source"])
+    bw = report["bandwidth"]
+    one, many = bw["single"], bw["many"]
+    print(f"\n== 出口管道（{bw['url']}，每次 {bw['bytes'] / 1e6:.0f} MB）")
+    print(f"  单连接  {one['mbps']:6.2f} MB/s  {one['ok']}/1 条有数据"
+          + (f"  {one['errs'][0]}" if one["errs"] else ""))
+    print(f"  {many['conns']} 并发 {many['mbps']:6.2f} MB/s  {many['ok']}/{many['conns']} 条有数据"
+          + (f"  {many['errs'][0]}" if many["errs"] else ""))
+    print(f"  ⇒ {bw['verdict']}")
     show("采集源站", report["sources"])
     print(f"\n写入 {out}（{report['elapsed_s']}s）")
     return 0

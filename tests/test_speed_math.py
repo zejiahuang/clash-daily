@@ -23,7 +23,11 @@ from clashhunter.mihomo import Mihomo  # noqa: E402
 
 
 class Clock:
-    """可控时钟。measure_speed 只通过 time.time() 取时间。"""
+    """可控时钟。测速只通过 time.monotonic() 取时间。
+
+    用 monotonic 而不是 time()：`measure_aggregate()` 要跨线程比较「最早首字节」
+    和「最晚末字节」，wall clock 在 NTP 校时时会跳，跳一下跨度就成负数。
+    """
 
     def __init__(self, start: float = 1_000.0) -> None:
         self.t = float(start)
@@ -83,7 +87,7 @@ def measure(*, chunks: int, chunk: int, per_chunk: float, handshake: float,
     if url is not None:
         kwargs["url"] = url
     with patch.object(Mihomo, "_opener", staticmethod(lambda port: opener)), \
-         patch("clashhunter.mihomo.time.time", clock.time):
+         patch("clashhunter.mihomo.time.monotonic", clock.time):
         speed = mh.measure_speed(1, **kwargs)
     state = dict(opener.state)
     state["url"] = getattr(opener, "last_url", "")

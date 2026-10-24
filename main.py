@@ -46,11 +46,15 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="每个节点最多下载多少字节用于测速")
     parser.add_argument("--speed-timeout", type=float, default=10.0, help="单节点下载测速超时(秒)")
     parser.add_argument("--speed-workers", type=int, default=32,
-                        help="下载测速初筛并发（太高会互相抢带宽、测出来偏低，后面还有复测兜底）")
+                        help="下载测速初筛并发（太高会互相抢带宽、测出来偏低，后面还有复测兜底）。"
+                             "这是**上限**：跑之前先量 runner 的出口管道，管道比 20 MB/s 窄时"
+                             "会自动压到 1 并发，见 builder._fit_to_pipe")
     parser.add_argument("--speed-max", type=int, default=0,
                         help="测速前最多保留多少个节点（0=不预采样，延迟可用的全部测速）")
     parser.add_argument("--refine-top", type=int, default=300,
-                        help="对初筛最快的多少个做低并发复测（0=不复测）")
+                        help="对初筛最快的多少个做低并发复测（0=不复测）。"
+                             "管道比 20 MB/s 窄时自动跳过：复测消的是「0.05 秒地板」和"
+                             "「并发抢带宽」，管道比这两者都窄时复测读数不会变")
     parser.add_argument("--refine-workers", type=int, default=16,
                         help="复测并发（故意低于初筛，减少抢带宽造成的低估）")
     parser.add_argument("--refine-bytes", type=int, default=24_000_000,

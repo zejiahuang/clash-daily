@@ -208,26 +208,62 @@ def build(
                     f"{len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区"
                     f"（不预采样）")
 
-            # 5. 下载测速 + 出口 IP --------------------------------------
-            log("[5/6] 下载测速与出口 IP")
+            # 5. 管道自检 → 定初筛参数 → 下载测速 + 出口 IP ------------------
+            log("[5/6] 出口管道自检与下载测速")
+            # 顺序是有讲究的：自检量的是「runner 的出口有多宽」，而初筛的并发数和
+            # 每节点下载量都该由这个数决定。顺序反了，就是拿 32 并发 × 6 MB 去压
+            # 一条不知道多宽的管子 —— 压不动就整片超时。
+            pipe, _single = _measure_pipe(
+                mh, url=speed_url, conns=PIPE_PROBE_CONNS,
+                nbytes=min(refine_bytes, PIPE_PROBE_BYTES),
+                timeout=min(speed_timeout, PIPE_PROBE_TIMEOUT), log=log,
+            )
+            screen_workers, screen_bytes = _fit_to_pipe(
+                pipe, speed_workers, speed_bytes, speed_timeout, log=log,
+            )
             probes = mh.probe_all(
                 candidates,
-                speed_url=speed_url, speed_bytes=speed_bytes,
+                speed_url=speed_url, speed_bytes=screen_bytes,
                 speed_timeout=speed_timeout, ip_timeout=ip_timeout,
-                workers=speed_workers, log=log,
+                workers=screen_workers, log=log,
             )
             result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
             log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
+
+            # 全灭时给一次机会，且只改一个变量：每节点下载量降到 64 KB 门槛之上。
+            # 理由：读数 0 只出现在「一个字节都没读到」或「不到 64 KB」，
+            # 与「读得慢」无关 —— 慢只会让读数变小，不会变成 0。缩小下载量能分开
+            # 「参数太大来不及」和「这条出口/这批节点根本不通」。两轮都 0 ⇒ 后者。
+            if result.stats.speed_ok == 0 and screen_bytes > RETRY_BYTES:
+                log(f"  ⚠️ 初筛 {len(candidates)} 个全是 0 ⇒ 改用 "
+                    f"{RETRY_BYTES / 1024:.0f} KB 重试一次")
+                probes = mh.probe_all(
+                    candidates,
+                    speed_url=speed_url, speed_bytes=RETRY_BYTES,
+                    speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+                    workers=screen_workers, log=log,
+                )
+                result.stats.speed_ok = sum(
+                    1 for v in probes.values() if v.get("speed", 0) > 0)
+                log(f"  重试后可用 {result.stats.speed_ok}/{len(candidates)}")
 
             # 复测：低并发 + 更大的下载量 + 多个测速源取中位数，重测「可能进入最终名单」的那批。
             # 为什么必须换更大的下载量、为什么不能沿用初筛的 speed_bytes，
             # 算式与实测依据都在 _refine_speed 的 docstring 里。
             sources: list[tuple[str, str]] = []
+            if refine_top > 0 and 0 < pipe < SOURCE_MIN_MBS:
+                # 复测要解决的问题是「0.05 秒地板」和「并发抢带宽」造成的低估。
+                # 管道比这两个效应都窄时，复测读数一模一样，只是白花时间：
+                # 300 × 24 MB = 7.2 GB，按 1 MB/s 是两小时。
+                log(f"  ⚠️ 管道只有 {pipe:.2f} MB/s（门槛 {SOURCE_MIN_MBS:.0f}）"
+                    f"⇒ 跳过复测（读数被管道压住，换大下载量也不会变）")
+                refine_top = 0
             if refine_top > 0:
                 # 自检是**串行**的：并行会让几个源互相抢 runner 的出口带宽，
-                # 量到的就不是各自的容量了。6 个源最坏 60 秒，一天一次可以接受。
+                # 量到的就不是各自的容量了。下载量与超时都压短，最坏 ~40 秒。
                 sources = _pick_sources(
-                    mh, nbytes=refine_bytes, timeout=speed_timeout,
+                    mh, nbytes=min(refine_bytes, PIPE_PROBE_BYTES),
+                    timeout=min(speed_timeout, PIPE_PROBE_TIMEOUT),
                     want=speed_sources, min_ratio=source_min_ratio, log=log,
                 )
             improved = _refine_speed(
@@ -235,7 +271,7 @@ def build(
                 top=refine_top, workers=refine_workers,
                 speed_url=speed_url, speed_bytes=refine_bytes,
                 speed_timeout=speed_timeout, ip_timeout=ip_timeout,
-                screen_bytes=speed_bytes, sources=sources, log=log,
+                screen_bytes=screen_bytes, sources=sources, log=log,
             )
             if improved is not None:
                 result.stats.speed_ok = sum(
@@ -406,6 +442,98 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
 # —— 那是源的天花板，不是节点的。低于它的一律不采用。
 SOURCE_MIN_MBS = 20.0
 
+# 管道自检的固定开销。这三个数一起决定「自检最多花多少秒」：
+# 单连接 6 秒 + 并发 6 秒 = 12 秒封顶，慢管子上也不会失控。
+PIPE_PROBE_BYTES = 6_000_000
+PIPE_PROBE_TIMEOUT = 6.0
+PIPE_PROBE_CONNS = 6
+
+# 全灭重试时的每节点下载量：必须高于 measure_speed_ex 的 64 KB 门槛，
+# 否则「读到了但太少」会和「什么都没读到」混在一起。
+RETRY_BYTES = 262_144
+
+
+def _measure_pipe(mh, *, url: str, conns: int, nbytes: int, timeout: float,
+                  log=print) -> tuple[float, float]:
+    """量 runner 的出口管道，返回 `(并发总量, 单连接读数)`，单位 MB/s。
+
+    两个数必须分开量、分开报，因为它们的关系决定「要不要压并发」：
+      - 并发总量 ≈ 单连接 ⇒ 出口总带宽就这么宽，再并发也不会变多，必须压；
+      - 并发总量 ≫ 单连接 ⇒ 只是每条连接被限到这么宽，并发完全跑得动，不用压。
+    只量一个数就把「按连接限速」当成「按出口限速」，是两种相反的结论共用一个
+    读数 —— 而这正是 `_fit_to_pipe` 唯一依赖的输入。
+
+    `pipe<=0` 表示量不出来（一个字节都没读到），调用方据此不做任何调整。
+    """
+    one = mh.measure_aggregate(url, conns=1, max_bytes=nbytes, timeout=timeout)
+    single = float(one.get("agg") or 0.0)
+    many = mh.measure_aggregate(url, conns=conns, max_bytes=nbytes, timeout=timeout)
+    agg = float(many.get("agg") or 0.0)
+    log(f"  出口自检：单连接 {single:.2f} MB/s，{conns} 条并发合计 {agg:.2f} MB/s"
+        f"（{many['ok']}/{conns} 条有数据，墙钟 {many['wall_s']}s）")
+    if agg <= 0:
+        errs = many.get("errs") or []
+        log("  ⚠️ 并发自检一个字节都没读到 ⇒ 不做调整（沿用默认并发与下载量）"
+            + (f"；原因：{errs[0]}" if errs else ""))
+        return 0.0, single
+    if single > 0 and agg > single * 1.5:
+        log(f"     ⇒ 单连接被限速（{agg / single:.1f}×），"
+            f"管道按并发总量 {agg:.2f} MB/s 算")
+    elif single > 0:
+        log(f"     ⇒ 并发没有提升（{agg / single:.1f}×），出口总带宽就是这么多")
+    return agg, single
+
+
+def _fit_to_pipe(pipe: float, workers: int, nbytes: int, timeout: float,
+                 *, log=print) -> tuple[int, int]:
+    """按「管道有多粗」把并发和每节点下载量压到真能测出数的范围。
+
+    为什么必须有这一步：`workers` 个并发各下 `nbytes`，总量是
+    `workers × nbytes`；如果这个量在 `timeout` 内搬不完，读数会被摊薄成
+    `管道 / 并发` —— 极端情况下连 64 KB 都凑不到，于是每个节点都是 0。
+
+    `pipe` 必须是**并发总量**（见 `_measure_pipe`），不是单连接读数：
+    单连接读数在「按连接限速」的出口上会低估 K 倍。
+
+    规则：
+      - 管道 < `SOURCE_MIN_MBS`（20 MB/s）时，**并发取 1**。
+        管道是瓶颈时，每连接只能分到 `pipe / workers`，并发只会把读数天花板
+        摊薄、把节点之间的差别压平，而整段墙钟（`节点数 × nbytes / pipe`）
+        与并发**无关** —— 多开并发只是把同一份带宽分给更多节点。
+        代价是失去握手时间的重叠（每个节点约 0.5 s），换来的是读数不被摊平
+        —— 产物名字里的速度就是读数，读数平了等于排名没有意义。
+      - 每节点下载量取 **1 MB**（不往上抬）。整段墙钟 ≈ `节点数 × nbytes / pipe`，
+        所以字节数越小越快；1 MB 给出的读数上限是 `1/0.05 = 20 MB/s`，
+        已经不高于这种管道的天花板，再大只是白花时间（5 MB 就是 5 倍墙钟）。
+      - 管道够粗时只按 `workers × nbytes / pipe <= timeout/2` 收并发，下载量不动。
+    """
+    if pipe <= 0 or workers <= 0 or nbytes <= 0 or timeout <= 0:
+        return workers, nbytes
+
+    per_node = nbytes / 1048576
+    if pipe < SOURCE_MIN_MBS:
+        # 只往下压，不往上抬：`--speed-bytes` 比这还小的时候它本来就来得及，
+        # 悄悄改大等于覆盖了用户明确给的值。
+        # 下限 0.1 MB：再小就接近 measure_speed_ex 的 64 KB 门槛，
+        # 「读到了但太少」会和「什么都没读到」混在一起。
+        target = min(1.0, max(0.1, pipe * timeout / 2))
+        new_bytes = int(min(per_node, target) * 1048576)
+        log(f"  ⚠️ 出口管道只有 {pipe:.2f} MB/s（门槛 {SOURCE_MIN_MBS:.0f}）"
+            f"⇒ {workers} 并发 × {per_node:.1f} MB 改成 1 并发 × "
+            f"{new_bytes / 1e6:.1f} MB")
+        log(f"     读数天花板就是管道本身 ≈ {pipe:.2f} MB/s，"
+            f"再快的节点也测不过这个数（这是 runner 的带宽，不是节点的问题）")
+        return 1, new_bytes
+
+    budget = timeout * 0.5
+    if workers * per_node / pipe <= budget:
+        return workers, nbytes
+    new_workers = max(1, min(workers, int(pipe * budget / per_node)))
+    log(f"  ⚠️ {workers} 并发 × {per_node:.1f} MB 在 {pipe:.2f} MB/s 的管道上"
+        f"需要 {workers * per_node / pipe:.0f}s，超过 {timeout:.0f}s 超时的一半"
+        f" ⇒ 改成 {new_workers} 并发")
+    return new_workers, nbytes
+
 
 def _pick_sources(mh, *, nbytes: int, timeout: float, want: int,
                   min_ratio: float, log=print) -> list[tuple[str, str]]:
@@ -446,6 +574,8 @@ def _pick_sources(mh, *, nbytes: int, timeout: float, want: int,
     log(f"  ⇒ 采用 {len(keep)} 个源取中位数："
         f"{' / '.join(r['label'] for r in keep)}"
         + ("（两源时中位数即均值）" if len(keep) == 2 else ""))
+    # ⚠️ 这里的 `best` 是**单连接**读数，不是「管道有多粗」—— 出口按连接限速时
+    # 它会低估 K 倍。管道由 _measure_pipe() 用并发总量单独量，见 _fit_to_pipe。
     return [(r["label"], r["url"]) for r in keep]
 
 

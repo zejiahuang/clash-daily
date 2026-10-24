@@ -479,6 +479,89 @@ class Mihomo:
                       max_bytes: int = 6_000_000, timeout: float = 10.0) -> float:
         return self.measure_speed_ex(port, url, max_bytes, timeout)[0]
 
+    def _pull(self, port: int | None, url: str, max_bytes: int,
+              timeout: float) -> tuple[int, float, float, str | None]:
+        """读一段数据，返回 (字节数, 首字节时刻, 末字节时刻, 失败原因)。
+
+        单独抽出来是因为 `measure_aggregate()` 要跨线程比较时刻 —— 必须用
+        `time.monotonic()`，wall clock 在 NTP 校时时会跳，跳一下读数就成负数。
+
+        `port is None` ⇒ 直连（不经内核）；否则走 `port` 那个入站端口对应的节点。
+        """
+        # URL 里的 {bytes} 必须跟着 max_bytes 走，否则「下够多少」和「服务器发多少」
+        # 会对不上：服务器先 EOF，循环提前结束，改 max_bytes 等于没改。
+        if "{bytes}" in url:
+            url = url.replace("{bytes}", str(max_bytes))
+        req = urllib.request.Request(
+            url, headers={"User-Agent": UA, "Accept": "*/*", "Connection": "close"}
+        )
+        started = time.monotonic()
+        total = 0
+        first = 0.0
+        last = 0.0
+        err: str | None = None
+        try:
+            opener = self._opener(port) if port is not None else _direct_opener()
+            with opener.open(req, timeout=timeout) as resp:
+                while total < max_bytes:
+                    chunk = resp.read(min(65536, max_bytes - total))
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    last = time.monotonic()
+                    if not first:
+                        first = last
+                    if last - started > timeout:
+                        break
+        except Exception as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"
+        return total, first, last, err
+
+    def measure_aggregate(self, url: str = SPEED_URL, *, conns: int = 8,
+                          max_bytes: int = 6_000_000,
+                          timeout: float = 6.0) -> dict:
+        """`conns` 条**并发直连**下测总吞吐 —— 这才是「出口管道有多粗」。
+
+        为什么单连接读数不能当管道：单连接慢有两种完全不同的原因，
+          ① 出口总带宽就这么宽 —— 再并发，加起来还是这么多；
+          ② 只是每条连接被限到这么宽 —— 并发能拿到接近 K 倍。
+        两者的修法相反（前者必须压并发和每节点下载量，后者一点不用动），
+        所以必须分开量，不能拿一个数当另一个用。
+
+        ⚠️ 2026-10-24 CNB runner（出口 111.230.93.5）单连接 1.06 MB/s，
+           而那一轮日志是「下载测速可用 0/354」。**这两件事不能互相解释**：
+           若管道真是 1 MB/s 且被 32 并发均分，每个节点 10 秒仍能读到约 300 KB、
+           算出 0.03 MB/s，会被计为「可用」而不是 0。0 只出现在「一个字节都没读到」
+           或「不到 64 KB」。所以那个 0 的原因至今**未定**，别拿带宽去解释它 ——
+           探因靠 `measure_speed_ex()` 带出来的失败原因。
+
+        返回 {conns, ok, agg, bytes, wall_s, errs}；`agg` 量不出来时为 0。
+        """
+        n = max(1, conns)
+
+        def one(_: int) -> dict:
+            total, first, last, err = self._pull(None, url, max_bytes, timeout)
+            return {"bytes": total, "first": first, "last": last, "err": err}
+
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=n) as pool:
+            rows = list(pool.map(one, range(n)))
+        wall = time.monotonic() - started
+
+        got = [r for r in rows if r["bytes"] > 0 and r["first"]]
+        total_bytes = sum(r["bytes"] for r in got)
+        first = min((r["first"] for r in got), default=0.0)
+        last = max((r["last"] for r in got), default=0.0)
+        span = max(last - first, 0.05) if first else 0.0
+        return {
+            "conns": n,
+            "ok": len(got),
+            "bytes": total_bytes,
+            "wall_s": round(wall, 1),
+            "agg": round(total_bytes / 1048576 / span, 2) if span else 0.0,
+            "errs": sorted({r["err"] for r in rows if r["err"]}),
+        }
+
     def measure_speed_ex(self, port: int | None, url: str = SPEED_URL,
                          max_bytes: int = 6_000_000,
                          timeout: float = 10.0) -> tuple[float, str | None]:
@@ -502,33 +585,8 @@ class Mihomo:
            「连不上」「被拒」「读超时」还是「太慢没凑够 64 KB」—— 这四种的修法
            完全不同，所以必须把原因带出来。
         """
-        # URL 里的 {bytes} 必须跟着 max_bytes 走，否则「下够多少」和「服务器发多少」
-        # 会对不上：服务器先 EOF，循环提前结束，改 max_bytes 等于没改。
-        if "{bytes}" in url:
-            url = url.replace("{bytes}", str(max_bytes))
-        req = urllib.request.Request(
-            url, headers={"User-Agent": UA, "Accept": "*/*", "Connection": "close"}
-        )
-        started = time.time()
-        total = 0
-        first_byte_at = 0.0
-        last_byte_at = 0.0
-        err: str | None = None
-        try:
-            opener = self._opener(port) if port is not None else _direct_opener()
-            with opener.open(req, timeout=timeout) as resp:
-                while total < max_bytes:
-                    chunk = resp.read(min(65536, max_bytes - total))
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    last_byte_at = time.time()
-                    if not first_byte_at:
-                        first_byte_at = last_byte_at
-                    if last_byte_at - started > timeout:
-                        break
-        except Exception as exc:  # noqa: BLE001
-            err = f"{type(exc).__name__}: {exc}"
+        total, first_byte_at, last_byte_at, err = self._pull(
+            port, url, max_bytes, timeout)
         if total < 65536 or not first_byte_at:
             if err is None:
                 err = (f"只读到 {total} 字节（不足 64 KB）"
