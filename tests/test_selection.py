@@ -35,6 +35,8 @@ def build_corpus(dominant: int, others: dict[str, int]) -> tuple[list[dict], dic
 
 def main() -> int:
     problems: list[str] = []
+    # 把被测函数的日志吞掉，避免刷屏
+    quiet = lambda *a, **k: None  # noqa: E731
 
     # 1. 美国 500 条、其余 8 国各 20 条，限 80 个 —— 每国都应拿到配额
     others = {"JP": 20, "HK": 20, "SG": 20, "DE": 20, "GB": 20, "KR": 20, "TW": 20, "FR": 20}
@@ -103,11 +105,48 @@ def main() -> int:
         if f"{raw:.1f}" != f"{_shown_speed(raw):.1f}":
             problems.append(f"_shown_speed({raw}) 与名字里的 f'{raw:.1f}' 不一致")
 
-    # 8. 同一个出口 IP 只能留最快的那个
+    # 8. 单国上限：名额少、国家多时，配额会退化成 1，剩下的名额全按速度补，
+    #    而测速机在美国 ⇒ 实测取 80 个时美国占了 30 个（37.5%）。
+    #    加 cap_per_country 后美国必须被压到上限，且**总数仍然补到 limit**。
+    others2 = {f"C{i:02d}": 20 for i in range(46)}          # 46 个国家各 20 条
+    items2, codes2 = build_corpus(500, others2)             # 美国 500 条
+    # 让美国的速度全部最快（v 最小），模拟「测速机在美国」的真实偏置
+    for i, it in enumerate(items2):
+        if codes2[it["name"]] == "US":
+            it["v"] = i
+    out_cap = _stratified(items2, 80, codes2, key=lambda p: p["v"],
+                          cap_per_country=16, log=quiet)
+    dist_cap = Counter(codes2[p["name"]] for p in out_cap)
+    if len(out_cap) != 80:
+        problems.append(f"加单国上限后总数 {len(out_cap)} != 80（上限不能把名额吃掉）")
+    if dist_cap.get("US", 0) > 16:
+        problems.append(f"美国 {dist_cap['US']} 个，超过上限 16")
+    if dist_cap.get("US", 0) < 16:
+        problems.append(f"美国只有 {dist_cap['US']} 个，说明上限把美国压过头了")
+    # 不加上限时美国应该远超 16，用来证明这条测试确实测到了差别
+    out_nocap = _stratified(items2, 80, codes2, key=lambda p: p["v"])
+    if Counter(codes2[p["name"]] for p in out_nocap)["US"] <= 16:
+        problems.append("不加上限时美国也没超过 16，这条用例构造不出偏置，测不出差别")
+
+    # 上限卡死后凑不满时要给出警告，而不是静默少数
+    # 注意：候选总数 ≤ limit 时函数会原样返回（cap 不参与），所以这里必须让总数大于 limit
+    thin = [{"name": f"u{i}", "v": i} for i in range(50)]
+    thin_codes = {p["name"]: "US" for p in thin}
+    out_thin = _stratified(thin, 40, thin_codes, key=lambda p: p["v"],
+                           cap_per_country=5, log=quiet)
+    if len(out_thin) != 5:
+        problems.append(f"只有 50 条美国、要 40 个、上限 5 时输出 {len(out_thin)}，应为 5")
+    # 候选总数不足 limit 时原样返回，上限不该把名单砍掉
+    out_few = _stratified(thin, 80, thin_codes, key=lambda p: p["v"],
+                          cap_per_country=5, log=quiet)
+    if len(out_few) != 50:
+        problems.append(f"候选只有 50 条、要 80 个时输出 {len(out_few)}，应为 50（原样返回）")
+
+
+    # 9. 同一个出口 IP 只能留最快的那个
     #    背景：nodes.dedupe() 的键是 (type, server, port, 凭证)，所以「同一台服务器、
     #    同一个端口，只是凭证不同」的两条会被当成两个节点。run #7 的最终 100 个里
     #    有三对其实是同一个出口，等于白扔了 3 个名额。这里直接用那三对真实数据。
-    quiet = lambda *a, **k: None  # noqa: E731
     dupes = [
         {"name": "us07", "type": "http", "server": "138.199.35.215", "port": 9002},
         {"name": "us13", "type": "http", "server": "138.199.35.215", "port": 9002},
@@ -164,7 +203,7 @@ def main() -> int:
         problems.append(f"同 server:port 且无出口 IP 时保留的是 "
                         f"{[p['name'] for p in out_ep]}，应保留更快的 'ch01'")
 
-    # 9. 出口 IP 必须是可信的公网地址字面量
+    # 10. 出口 IP 必须是可信的公网地址字面量
     #    背景：run #7 的 加拿大-01 的 exit_ip 是 104.26.0.0 —— Cloudflare 网段地址，
     #    不是任何客户端的地址，GeoIP 照样给它编了个国家，于是节点名里的国家是错的。
     ip_cases = [
