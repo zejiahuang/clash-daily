@@ -11,11 +11,19 @@ on:
         required: false
         default: "100"
       speed_max:
-        description: "最多对多少个节点做下载测速"
+        description: "测速前最多保留多少个节点（0=不预采样，延迟可用的全部测速）"
         required: false
-        default: "400"
+        default: "0"
       speed_workers:
-        description: "下载测速并发"
+        description: "下载测速初筛并发"
+        required: false
+        default: "32"
+      refine_top:
+        description: "对初筛最快的多少个做低并发复测（0=不复测）"
+        required: false
+        default: "300"
+      refine_workers:
+        description: "复测并发"
         required: false
         default: "16"
       delay_timeout:
@@ -37,7 +45,7 @@ jobs:
     #   - 想「从中国大陆附近测速」→ 在亚太机器上装 self-hosted runner，
     #     并把仓库变量 RUNNER_LABEL 设为该 runner 的标签（如 asia）
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 75
+    timeout-minutes: 120
 
     steps:
       - name: 检出仓库
@@ -80,8 +88,10 @@ jobs:
       - name: 采集 · 测速 · 生成配置
         env:
           MAX_NODES: ${{ inputs.max_nodes || '100' }}
-          SPEED_MAX: ${{ inputs.speed_max || '400' }}
-          SPEED_WORKERS: ${{ inputs.speed_workers || '16' }}
+          SPEED_MAX: ${{ inputs.speed_max || '0' }}
+          SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
+          REFINE_TOP: ${{ inputs.refine_top || '300' }}
+          REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
           # 有个源站（freeclashverge）要读 GitHub trees API 才能定位最新日期的文件，
           # 匿名 60 次/小时不够用，带上 token 提到 5000 次/小时。
@@ -93,6 +103,8 @@ jobs:
             --max-nodes "$MAX_NODES" \
             --speed-max "$SPEED_MAX" \
             --speed-workers "$SPEED_WORKERS" \
+            --refine-top "$REFINE_TOP" \
+            --refine-workers "$REFINE_WORKERS" \
             --delay-timeout "$DELAY_TIMEOUT"
 
       - name: 校验产物
