@@ -92,7 +92,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="all=本机一条龙；delay=只跑到延迟测速并写 candidates.json；"
                              "speed=只做下载测速（GitHub runner 上跑）；"
                              "finish=只做国家判定与出产物（读 candidates.json + speed.json）")
-    parser.add_argument("--in", dest="speed_in", default="",
+    # 两个名字都留着：`--in` 是 speed 段的输入（候选），`--speed-in` 是 finish 段的
+    # 输入（测速结果）。语义不同但都是「上一段的产物」，共用一个 dest 就够了；
+    # ⚠️ 只写其中一个会让 .cnb.yml 里另一种写法直接报 unrecognized arguments。
+    parser.add_argument("--in", "--speed-in", dest="speed_in", default="",
                         help="speed 段读 candidates.json 的路径 / finish 段读 speed.json 的路径")
     parser.add_argument("--speed-out", default="",
                         help="speed 段把结果写到哪里（默认 <out>/speed.json）")
