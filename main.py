@@ -57,6 +57,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
 
     parser.add_argument("--max-nodes", type=int, default=80, help="最终最多保留多少个节点")
+    parser.add_argument("--country-share", type=float, default=0.2,
+                        help="单个国家最多占最终名单的比例（0=不限制）。"
+                             "名额少、国家多时配额会退化成 1，剩下的名额全按速度补，"
+                             "而测速机在美国，不设上限美国会占到三四成")
     parser.add_argument("--vantage", default="",
                         help="测速机位置，写进订阅文件头部（留空则尝试从 <out>/runner-geo.json 读）")
     parser.add_argument("--top-per-country", type=int, default=0,
@@ -104,6 +108,7 @@ def main(argv=None) -> int:
             refine_workers=args.refine_workers,
             ip_timeout=args.ip_timeout,
             max_nodes=args.max_nodes,
+            country_share=args.country_share,
             top_per_country=args.top_per_country,
             no_speedtest=args.no_speedtest,
             vantage=vantage,
