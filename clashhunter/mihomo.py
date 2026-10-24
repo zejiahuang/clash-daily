@@ -396,15 +396,24 @@ class Mihomo:
 
     def measure_speed(self, port: int, url: str = SPEED_URL,
                       max_bytes: int = 2_000_000, timeout: float = 10.0) -> float:
-        """下载一段固定大小的数据，返回峰值速度（MB/s）。失败返回 0。"""
+        """下载一段固定大小的数据，返回**平均**速度（MB/s）。失败返回 0。
+
+        ⚠️ 平均值的分母必须从「收到第一个字节」算起，不能从发请求算起。
+        从发请求算的话分母里含了 TCP+TLS 握手，而握手成本对每个节点是**固定**的
+        —— 于是它压低下所有节点的读数，且**速度越快压得越狠**：
+        2 MB 的下载在 10 MB/s 上只要 0.2 s，握手 0.15 s 就能把 10 报成 5.7；
+        而 1 MB/s 的节点只是从 1.0 变成 0.93。这会系统性地把排名压平。
+
+        分母下限取 0.05 s：极快的节点可能在两三个 chunk 内就把 2 MB 收完，
+        真实跨度只有几毫秒，不设下限会除出几十上百 MB/s 的假数字。
+        """
         req = urllib.request.Request(
             url, headers={"User-Agent": UA, "Accept": "*/*", "Connection": "close"}
         )
         started = time.time()
         total = 0
-        samples: list[float] = []
-        window_start = started
-        window_bytes = 0
+        first_byte_at = 0.0
+        last_byte_at = 0.0
         try:
             with self._opener(port).open(req, timeout=timeout) as resp:
                 while total < max_bytes:
@@ -412,23 +421,17 @@ class Mihomo:
                     if not chunk:
                         break
                     total += len(chunk)
-                    window_bytes += len(chunk)
-                    now = time.time()
-                    span = now - window_start
-                    if span >= 0.25:
-                        samples.append(window_bytes / span)
-                        window_start, window_bytes = now, 0
-                    if now - started > timeout:
+                    last_byte_at = time.time()
+                    if not first_byte_at:
+                        first_byte_at = last_byte_at
+                    if last_byte_at - started > timeout:
                         break
         except Exception:  # noqa: BLE001
             pass
-        elapsed = max(time.time() - started, 1e-3)
-        if total < 65536:
+        if total < 65536 or not first_byte_at:
             return 0.0
-        average = total / elapsed
-        # 峰值取滑动窗口最大值；样本太少时退回平均值，避免把连接建立的抖动当峰值
-        peak = max(samples) if len(samples) >= 2 else average
-        return peak / 1048576
+        span = max(last_byte_at - first_byte_at, 0.05)
+        return (total / span) / 1048576
 
     def probe_one(self, port: int, *, speed_url: str, speed_bytes: int,
                   speed_timeout: float, ip_timeout: float) -> dict:
