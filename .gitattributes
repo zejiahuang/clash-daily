@@ -1,0 +1,12 @@
+# 行尾统一为 LF。
+#
+# 为什么需要显式约定：本机 Windows 的 system 级 core.autocrlf=true 会把工作区
+# 写成 CRLF，而 CI（ubuntu-latest）检出的是 LF。没有这条约定时，任何「本机编辑
+# → 远端合并」都会变成整文件全改 —— 2026-10-24 就因此让 git push 被拒，
+# 而且 diff 里看不出真正改了什么（14 个文件、5700 行全是行尾噪音）。
+#
+# text=auto 保留二进制探测；eol=lf 只作用于被判定为文本的文件。
+* text=auto eol=lf
+
+# dist/ 是每日运行产物，由 CI 覆盖写入，同样按文本处理即可。
+# 仓库目前没有任何二进制文件；将来加了 .png/.so/.zip 等，在这里单独标 binary。
