@@ -79,10 +79,21 @@ main:
               exit 0
             fi
             git commit -m "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 [skip ci]"
-            git push || {
-              echo "普通 push 失败，改用 CNB_TOKEN 重试"
-              git push "https://cnb:${CNB_TOKEN}@${CNB_REPO_URL_HTTPS#https://}"
-            }
+
+            # 检出用的凭据不一定有写权限（CI 里很常见）。先试默认，失败再显式带 CNB_TOKEN。
+            # ⚠️ 失败时必须把 CNB_* 环境变量打出来 —— 变量名猜错的话，
+            #    下次还是错的；打出来才知道真名。
+            if git push; then
+              exit 0
+            fi
+            echo "默认 push 失败，改用 CNB_TOKEN 重试"
+            if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then
+              echo "===== 拼不出带凭据的地址，打印环境以便定位 ====="
+              env | grep -i '^CNB_' | sed 's/\(TOKEN[A-Z_]*=\).*/\1***/' | sort
+              exit 1
+            fi
+            base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
+            git push "https://cnb:${CNB_TOKEN}@${base#https://}"
 
   # 每天北京时间 02:00（CNB 的 crontab 固定按 Asia/Shanghai 解释）
   "crontab: 0 2 * * *":
@@ -149,7 +160,18 @@ main:
               exit 0
             fi
             git commit -m "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 [skip ci]"
-            git push || {
-              echo "普通 push 失败，改用 CNB_TOKEN 重试"
-              git push "https://cnb:${CNB_TOKEN}@${CNB_REPO_URL_HTTPS#https://}"
-            }
+
+            # 检出用的凭据不一定有写权限（CI 里很常见）。先试默认，失败再显式带 CNB_TOKEN。
+            # ⚠️ 失败时必须把 CNB_* 环境变量打出来 —— 变量名猜错的话，
+            #    下次还是错的；打出来才知道真名。
+            if git push; then
+              exit 0
+            fi
+            echo "默认 push 失败，改用 CNB_TOKEN 重试"
+            if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then
+              echo "===== 拼不出带凭据的地址，打印环境以便定位 ====="
+              env | grep -i '^CNB_' | sed 's/\(TOKEN[A-Z_]*=\).*/\1***/' | sort
+              exit 1
+            fi
+            base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
+            git push "https://cnb:${CNB_TOKEN}@${base#https://}"
