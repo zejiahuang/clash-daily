@@ -324,6 +324,31 @@ def test_probe_env_threshold_no_drift(problems: list[str]) -> None:
                         f"{SOURCE_MIN_MBS} 不一致 —— 报告结论会和流水线实际行为相反")
 
 
+def test_top_reason(problems: list[str]) -> None:
+    """进度行要能直接说出「多数失败是什么」，且不影响正常进度。"""
+    from clashhunter.mihomo import _top_reason
+
+    results = {
+        "a": {"speed": 0.0, "speed_err": "URLError: [Errno 111] Connection refused"},
+        "b": {"speed": 0.0, "speed_err": "URLError: [Errno 111] Connection refused"},
+        "c": {"speed": 0.0, "speed_err": "只读到 0 字节（不足 64 KB）"},
+        "d": {"speed": 2.0, "speed_err": None},
+    }
+    got = _top_reason(results)
+    if "2 个" not in got or "Connection refused" not in got:
+        problems.append(f"_top_reason 取错了最常见的失败原因：{got!r}"
+                        f"（应为「2 个 ...Connection refused」）")
+    if _top_reason({}) != "":
+        problems.append("没有任何失败时 _top_reason 应返回空串，"
+                        "否则正常进度行会被塞一句空话")
+    if _top_reason({"x": {"speed": 0.0}}) != "":
+        problems.append("只有 speed=0 但没有 speed_err 时应返回空串")
+    long = _top_reason({"x": {"speed_err": "e" * 500}}, limit=20)
+    if len(long) > 30:
+        problems.append(f"_top_reason 没截断长原因（{len(long)} 字符），"
+                        f"进度行会被一条长错误撑满")
+
+
 def main() -> int:
     problems: list[str] = []
     test_fit_narrow(problems)
@@ -341,6 +366,7 @@ def main() -> int:
     test_exit_ip_total_budget(problems)
     test_probe_budget(problems)
     test_probe_env_threshold_no_drift(problems)
+    test_top_reason(problems)
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:

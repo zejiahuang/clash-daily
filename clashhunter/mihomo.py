@@ -99,6 +99,25 @@ def _direct_opener():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def _top_reason(results: dict[str, dict], limit: int = 72) -> str:
+    """出现次数最多的失败原因，形如 `37 个 URLError: ...`。没记录到异常时返回空串。
+
+    为什么要它：`probe_all` 原来只在**最后**打印失败原因，而进度行只有「可用 N」。
+    CNB 的构建日志是前端流式加载的，截一段出来就只剩一串「可用 0」，
+    分不清是连不上、被拒、超时还是读得太少 —— 这四种修法完全不同。
+    把它挂到进度行上，日志随便截一段都是判据。
+    """
+    counts: dict[str, int] = {}
+    for value in results.values():
+        reason = value.get("speed_err")
+        if reason:
+            counts[reason] = counts.get(reason, 0) + 1
+    if not counts:
+        return ""
+    reason, count = max(counts.items(), key=lambda kv: kv[1])
+    return f"{count} 个 {reason[:limit]}"
+
+
 def _median(values: list[float]) -> float:
     """中位数。空列表返回 0。
 
@@ -716,7 +735,11 @@ class Mihomo:
                         done += 1
                         if done % 25 == 0 or done == total:
                             alive = sum(1 for v in results.values() if v["speed"] > 0)
-                            log(f"    ... {done}/{total}，可用 {alive}")
+                            # 进度行带上「到现在为止最常见的失败原因」：日志被截断
+                            # 也还能判断，不必等到最后一屏。
+                            note = _top_reason(results) if alive * 2 < done else ""
+                            log(f"    ... {done}/{total}，可用 {alive}"
+                                + (f"，多数失败：{note}" if note else ""))
             finally:
                 self.stop()
 
@@ -736,4 +759,7 @@ class Mihomo:
             if not counts:
                 log("      没有记录到异常 —— 说明是「读到了但不到 64 KB」，"
                     "即节点太慢或出口带宽不够")
+            log("      判据：Connection refused ⇒ 本地监听端口没起来；"
+                "「只读到 0 字节」⇒ 隧道被对端关掉（上游拨号失败）；"
+                "HTTPError 403 ⇒ 目标站拒了这个出口 IP；timed out ⇒ 节点慢到读不完")
         return results
