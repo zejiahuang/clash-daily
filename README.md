@@ -1,10 +1,10 @@
 # 节点聚合工具（每日自动测速）
 
-每天自动抓取 4 个节点源站的最新数据，**真实下载测速**后按出口地区重命名，
-产出可直接导入 Clash Verge / Mihomo / ClashX Meta 的配置文件。
+每天自动抓取 10 个节点源站的最新数据，**真实下载测速**后按出口地区重命名，
+每次只保留 **100** 个节点，产出可直接导入 Clash Verge / Mihomo / ClashX Meta 的配置文件。
 
 ```
-采集 → 去重 → TCP 预筛 → 延迟测速 → 下载测速 → 出口地区识别 → 重命名 → 产出
+采集 → 去重 → TCP 预筛 → 延迟测速 → 下载测速 → 出口地区识别 → 重命名 → 取 100 → 产出
 ```
 
 - 节点名格式：`日本-01-12.5MB/S`、`美国-03-8.4MB/S`、`中国香港-02-25.1MB/S`
@@ -108,16 +108,73 @@ git push -u origin main
 
 ---
 
-## 四、流程细节
+## 四、源站清单
+
+10 个源站，5 种页面结构，各配一个适配器（`clashhunter/sources.py`）：
+
+| # | 源站 | 适配器 | 订阅地址从哪来 | 2026-10-24 实测 |
+|---|---|---|---|---:|
+| 1 | `manifest.dpdns.org/today/` | `manifest` | 页面里直接给直链 | 177 |
+| 2 | `clash-node.com/free-node/` | `index` | 索引页 → 当日文章 → `/uploads/` | 4761 |
+| 3 | `v2rayfree.org/` | `index` | 同上 | 2333 |
+| 4 | `stelliberty.com/free-node/` | `index` | 同上 | 1092 |
+| 5 | `lancex.net/free-node/` | `index` | 同上（文章是 `.htm`） | **0** ⚠️ |
+| 6 | `nodetoolbox.net/free-nodes/` | `wp-dated` | WordPress 日期目录 → `nodesub.` 子域 | 30 |
+| 7 | `clashsuburl.com/free-nodes/` | `wp-dated` | 同上 | 30 |
+| 8 | `zhuhaiuk/free-nodes` | `github-raw` | 仓库固定文件名 raw | 45 |
+| 9 | `TG-NAV/nodeshare` | `github-raw` | 自身产出为空，回退到它声明的上游 | 33 ⚠️ |
+| 10 | `freeclashverge.github.io` | `gh-uploads` | `uploads/YYYY/MM/<n>-YYYYMMDD.yaml` 取最新日期 | 4769 |
+
+合计 **13270 原始 → 2724 去重 → 2405 唯一端点 → 1311 通过 TCP 预筛 → 取 100**。
+
+三个需要解释的地方：
+
+**① `lancex` 抓到 0 个，是源站自己坏了，不是适配器写错。**
+文章页能正常抓（43 KB），里面有 8 个订阅地址，但全部指向 `node.lancex.net`，
+而该域**整站 526**（Cloudflare「源站证书无效」）—— 连根路径 `https://node.lancex.net/`
+都是 526，带不带 Referer、http 还是 https、换哪一天的文章，结果都一样。
+适配器保留着，源站修好会自动恢复；这期间只记一条 warn，不影响其它 9 个源。
+
+**② `TG-NAV/nodeshare` 的产出长期是空的，所以配了兜底上游。**
+它的 `clash.yaml` 和 `v2ray.txt` 都是 **0 字节**。看它自己的 `run.sh` 才知道原因：
+内容靠 `api-suc.0z.gs` 这个 subconverter 生成，而该服务已经失效（实测连不上），
+所以 workflow 每天跑、每天提交两个空文件。
+兜底取的是它 `run.sh` 里自己声明的上游仓库 —— `Pawdroid/Free-servers`（可用）、
+`ermaozi01/free_clash_vpn`（可用）、`free-nodes/clashfree`（已 404，跳过）。
+**兜底只在本源产出为空时才用**，日志和 `report.md` 会写明「自身产出为空，已改用兜底上游」。
+
+**③ `nodetoolbox` 和 `clashsuburl` 其实是同一份数据。**
+两家订阅正文字节数完全相同（6516 B 的 `.yaml` / 4052 B 的 `.txt`），
+解析出的 15 个节点也完全一致。不需要特殊处理 —— 去重会消掉一份。
+
+### 源站改版了怎么办
+
+每个源站在 `report.md` 里都有一行状态，三种状态要分清：
+
+- `OK` —— 正常
+- `失败：...` —— 适配器报错（索引页找不到文章链接 / 页面结构变了）
+- `OK（找到 N 个订阅地址但全部下载失败）` —— 地址找到了，文件下不下来（`lancex` 目前是这种）
+- `OK（自身产出为空，已改用兜底上游）` —— 见上面第 ② 条
+
+---
+
+## 五、流程细节
 
 | 阶段 | 做什么 | 典型数量 |
 |---|---|---|
-| ① 采集 | 4 个源站的索引页 + 当天文章 + 直链 YAML | 约 2000–10000 条原始 |
-| ② 解析去重 | `vmess/vless/trojan/ss/ssr/hysteria2/tuic` + Clash YAML，按 `(类型,服务器,端口,凭据)` 去重 | 约 2000 条 |
-| ③ TCP 预筛 | 只保留 443/8443 等端口能建连的 | 约 1100 条 |
+| ① 采集 | 10 个源站，5 种页面结构 | 约 13000 条原始 |
+| ② 解析去重 | `vmess/vless/trojan/ss/ssr/hysteria2/tuic` + Clash YAML，按 `(类型,服务器,端口,凭据)` 去重 | 约 2700 条 |
+| ③ TCP 预筛 | 只保留 443/8443 等端口能建连的 | 约 1300 条 |
 | ④ 延迟测速 | 内核真实过一遍节点，拿端到端延迟 | 约 200–400 条 |
 | ⑤ 下载测速 | 每节点绑一个独立入站端口，并行下载 2 MB，取峰值 | 同时探测出口 IP |
-| ⑥ 重命名 | 按地区分组，组内按速度降序 | `地区-序号-速度MB/S` |
+| ⑥ 重命名 + 截断 | 按地区分组，组内按速度降序，再按国家配额取前 100 | `地区-序号-速度MB/S` |
+
+### 为什么每次只留 100 个
+
+`--max-nodes` 的截断走的是 `_stratified()`：先给每个国家分一份配额
+（`100 // 国家数`），再用剩余名额按速度补齐。所以「100 个」不是「速度最快的 100 个」，
+而是**先保证每个国家都有名额，再在名额内按速度排**。
+如果只按速度取前 100，结果会退化成「测速机附近的 100 个」。
 
 ### 为什么地区要用出口 IP
 
@@ -145,21 +202,25 @@ mixed 端口，于是几百个节点能同时测。已实测：端口 7911 的�
 
 ---
 
-## 五、本地调试
+## 六、本地调试
 
 ```bash
 pip install -r requirements.txt
 
 # 只验证采集与解析，不测速
-python main.py --no-speedtest --max-nodes 50
+python main.py --no-speedtest --max-nodes 100
+
+# 只跑某几个源（排查单个源站改版时用）
+python main.py --no-speedtest --sources nodetoolbox,clashsuburl
 
 # 完整跑一次
-python main.py --out dist --work work --max-nodes 300 --speed-max 400
+python main.py --out dist --work work --max-nodes 100 --speed-max 400
 
 # 单元测试
 python tests/test_parsers.py
 python tests/test_bisect.py
 python tests/test_selection.py
+python tests/test_sources.py
 ```
 
 内核（mihomo）会自动下载；国内网络直连 GitHub 慢时，代码会依次尝试
@@ -167,7 +228,7 @@ python tests/test_selection.py
 
 ---
 
-## 六、产物
+## 七、产物
 
 | 文件 | 说明 |
 |---|---|
@@ -178,7 +239,7 @@ python tests/test_selection.py
 
 ---
 
-## 七、平台选型记录（实测）
+## 八、平台选型记录（实测）
 
 做过一轮国内平台调研，结论留在这里，避免以后重复踩：
 
