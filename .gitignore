@@ -29,3 +29,6 @@ run.zip
 poll*.sh
 run*.zip
 a.json
+
+# 本地工具（同步脚本等，含令牌，不入库）
+.local-tools/
