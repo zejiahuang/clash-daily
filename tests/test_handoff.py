@@ -80,6 +80,74 @@ def _speed(run_id: str = RUN_ID) -> dict:
 # ------------------------------------------------------------------ A. 候选往返
 
 
+class _FakeMihomo:
+    """只实现 delay 段会用到的那四个方法。"""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def filter_loadable(self, proxies):
+        return proxies, []
+
+    def start(self, proxies, ports=None, **k):
+        return None
+
+    def stop(self):
+        return None
+
+    def delay(self, name, url=None, timeout_ms=None):
+        return 100 + int(name[1:])  # n0001 → 101
+
+
+def test_delay_stage_writes_usable_file(problems: list[str]) -> None:
+    """A0. 真跑一遍 delay 段（源站/内核全打桩），产出的文件必须能被 finish 吃下。
+
+    为什么不能只测 finish：`_finish` 的输入是我手写的假 payload，
+    真生产者少写一个字段它照样能过 —— 而流水线里那一跑要十几分钟才暴露。
+    """
+    import types
+    from unittest.mock import patch
+
+    from clashhunter import builder
+
+    proxies = [dict(item) for item in CANDIDATES]
+    report = types.SimpleNamespace(sid="fake", urls=["u"], articles=["a"],
+                                   proxies=proxies, error=None, note="")
+    alive = {(p["server"], p["port"]): True for p in proxies}
+
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        with patch("clashhunter.builder.source_mod.collect", return_value=[report]), \
+                patch("clashhunter.builder.netcheck.probe_endpoints", return_value=alive), \
+                patch("clashhunter.builder.ensure_binary", return_value=Path("/bin/true")), \
+                patch("clashhunter.builder.Mihomo", _FakeMihomo), \
+                patch("clashhunter.builder._server_countries",
+                      return_value={"n0001": "US", "n0002": "US", "n0003": "JP"}):
+            result = builder.build(
+                out_dir=out, work_dir=out / "work", stage="delay",
+                speed_bytes=6_000_000, speed_workers=8, refine_top=24,
+                candidates_path=out / "candidates.json", log=lambda *a, **k: None,
+            )
+        if result.proxies:
+            problems.append("delay 段不该产出节点（那是 finish 段的活）")
+        path = out / "candidates.json"
+        if not path.is_file():
+            problems.append("delay 段没有写出 candidates.json")
+            return
+        payload = json.loads(path.read_text(encoding="utf-8"))
+
+    for key in ("run_id", "generated_at", "candidates", "server_countries", "stats", "knobs"):
+        if key not in payload:
+            problems.append(f"candidates.json 缺 {key} —— finish 段会静默少东西")
+    if len(payload.get("candidates") or []) != 3:
+        problems.append(f"候选数不对：{len(payload.get('candidates') or [])}")
+    if any("delay" not in c for c in payload.get("candidates") or []):
+        problems.append("候选里没有 delay 字段 —— 报告里的延迟列会是空的")
+    knobs = payload.get("knobs") or {}
+    if knobs.get("refine_top") != 24 or knobs.get("speed_workers") != 8:
+        problems.append(f"knobs 没把测速参数带过去：{knobs}")
+
+
 def test_finish_uses_candidates(problems: list[str]) -> None:
     """delay 段写出的字段，finish 段必须全都用得上。"""
     from clashhunter import builder
@@ -377,6 +445,7 @@ def test_cnb_stage_order(problems: list[str]) -> None:
 
 def main() -> int:
     problems: list[str] = []
+    test_delay_stage_writes_usable_file(problems)
     test_finish_uses_candidates(problems)
     test_finish_rejects_stale_run_id(problems)
     test_speedjob_never_measures_locally(problems)
