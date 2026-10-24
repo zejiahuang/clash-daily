@@ -1,8 +1,8 @@
 # ============================================================
 # 免费节点聚合订阅 · 自动生成，请勿手动编辑
-# 生成时间：2026-10-24 10:12:18 +0800
+# 生成时间：2026-10-24 10:23:16 +0800
 # 节点数量：100
-# 覆盖地区：美国×14、加拿大×12、瑞士×3、荷兰×3、丹麦×2、比利时×2、爱尔兰×2、中国×1、中国台湾×1、中国香港×1、乌克兰×1、亚美尼亚×1、以色列×1、伊朗×1、伯利兹×1、俄罗斯×1、保加利亚×1、克罗地亚×1、冰岛×1、匈牙利×1、南非×1、卢森堡×1、印度×1、印度尼西亚×1、厄瓜多尔×1、哈萨克斯坦×1、哥斯达黎加×1、喀麦隆×1、土耳其×1、塞尔维亚×1、塞浦路斯×1、塞舌尔×1、墨西哥×1、奥地利×1、巴西×1、希腊×1、库拉索×1、德国×1、意大利×1、拉脱维亚×1、挪威×1、捷克×1、摩尔多瓦×1、新加坡×1、新西兰×1、日本×1、智利×1、格鲁吉亚×1、法国×1、波兰×1、波黑×1、泰国×1、澳大利亚×1、爱沙尼亚×1、瑞典×1、白俄罗斯×1、秘鲁×1、立陶宛×1、罗马尼亚×1、芬兰×1、英国×1、英属维尔京群岛×1、葡萄牙×1、西班牙×1、阿尔巴尼亚×1、阿联酋×1、韩国×1、马来西亚×1、黑山×1
+# 覆盖地区：美国×18、加拿大×3、中国台湾×2、中国香港×2、乌克兰×2、俄罗斯×2、保加利亚×2、南非×2、印度×2、印度尼西亚×2、土耳其×2、德国×2、意大利×2、拉脱维亚×2、挪威×2、捷克×2、斯里兰卡×2、新加坡×2、日本×2、法国×2、波兰×2、泰国×2、澳大利亚×2、爱尔兰×2、瑞典×2、瑞士×2、立陶宛×2、罗马尼亚×2、芬兰×2、英国×2、荷兰×2、西班牙×2、阿联酋×2、韩国×2、马来西亚×2、丹麦×1、亚美尼亚×1、以色列×1、伯利兹×1、哈萨克斯坦×1、墨西哥×1、奥地利×1、爱沙尼亚×1、秘鲁×1、英属维尔京群岛×1、葡萄牙×1、越南×1、阿尔巴尼亚×1
 # 节点名格式：国家-序号-实测峰值速度（MB/S）
 # 免费节点随时可能失效，仅供学习与技术研究使用
 # ============================================================
@@ -14,224 +14,172 @@ ipv6: false
 unified-delay: true
 external-controller: 127.0.0.1:9090
 proxies:
-- name: 美国-01-9.3MB/S
-  type: vmess
-  server: cf.0sm.com
-  port: 80
-  udp: true
-  uuid: 0cf6d970-3f1d-4aae-a989-92a8f76ae3db
-  alterId: '0'
-  cipher: auto
-  tls: false
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    early-data-header-name: Sec-WebSocket-Protocol
-    headers:
-      Host: vmess.lbw666.dpdns.org
-    max-early-data: 2048
-    path: /ws
-  packet-encoding: xudp
-  sub_tag: S004-260618
-  xudp: true
-- name: 美国-02-6.1MB/S
-  type: vmess
-  server: cf.877771.xyz
-  port: 443
-  udp: true
-  uuid: 0cf6d970-3f1d-4aae-a989-92a8f76ae3db
-  alterId: '0'
-  cipher: auto
-  tls: true
-  servername: vmess.lbw666.dpdns.org
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    early-data-header-name: Sec-WebSocket-Protocol
-    headers:
-      Host: vmess.lbw666.dpdns.org
-    max-early-data: 2048
-    path: /ws
-  packet-encoding: xudp
-  sub_tag: S004-260618
-  xudp: true
-- name: 美国-03-5.8MB/S
+- name: 美国-01-7.9MB/S
   type: ss
-  server: 156.146.38.170
+  server: 156.146.38.169
   port: 443
   udp: true
   cipher: aes-128-gcm
   password: shadowsocks
-- name: 美国-04-5.1MB/S
-  type: http
-  server: 154.47.25.78
-  port: 9443
+- name: 美国-02-6.9MB/S
+  type: vmess
+  server: 67.220.85.46
+  port: 18000
   udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 美国-05-4.9MB/S
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+- name: 美国-03-6.8MB/S
   type: http
-  server: webdrone.club
-  port: 443
-  udp: true
-  tls: true
-  sni: webdrone.club
-  sub_tag: R002-260618
-- name: 美国-06-4.9MB/S
-  type: http
-  server: webdrone.club
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  sni: webdrone.club
-  skip-cert-verify: false
-  sub_tag: P002-260618
-- name: 美国-07-4.9MB/S
-  type: vless
-  server: 195.211.98.43
-  port: 443
-  udp: true
-  uuid: 1b4b11d5-4c2d-4533-9a55-636757cdee94
-  tls: true
-  servername: www.cloudflare.com
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: xPnpkXu5qfwIArlHKvJsqKJnGdGbJK1tT2GzWMyLohA
-    short-id: 9c56fddf237e8eaf
-  packet-encoding: xudp
-- name: 美国-08-4.9MB/S
-  type: http
-  server: webdrone.club
-  port: 443
-  udp: true
-  password: sni="webdrone.club"
-  tls: true
-  sni: webdrone.club
-  sub_tag: R002-260618
-  username: None
-- name: 美国-09-4.9MB/S
-  type: http
-  server: 198.44.135.27
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 美国-10-4.7MB/S
-  type: http
-  server: 198.44.135.19
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 美国-11-4.4MB/S
-  type: http
-  server: webdrone.club
-  port: 443
+  server: 138.199.35.207
+  port: 9002
   udp: true
   password: 'null'
   tls: true
-  sni: webdrone.club
-  sub_tag: R002-260618
+  skip-cert-verify: true
+  sub_tag: P002-260618
   username: 'null'
-- name: 美国-12-4.4MB/S
-  type: vmess
-  server: cf.0sm.com
+- name: 美国-04-6.8MB/S
+  type: http
+  server: 138.199.35.215
+  port: 9002
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+- name: 美国-05-6.7MB/S
+  type: vless
+  server: 169.40.42.89
   port: 443
   udp: true
-  uuid: 0cf6d970-3f1d-4aae-a989-92a8f76ae3db
-  alterId: '0'
-  cipher: auto
+  uuid: d65cc14c-f53f-4fe2-b262-97856601319c
   tls: true
-  servername: vmess.lbw666.dpdns.org
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    early-data-header-name: Sec-WebSocket-Protocol
-    headers:
-      Host: vmess.lbw666.dpdns.org
-    max-early-data: 2048
-    path: /ws
+  servername: yahoo.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg
+    short-id: c39cc7310a
   packet-encoding: xudp
-  sub_tag: M003-260806
-  xudp: true
-- name: 美国-13-4.3MB/S
+- name: 美国-06-6.6MB/S
+  type: ss
+  server: 185.215.132.18
+  port: 19999
+  udp: true
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: 美国-07-6.6MB/S
   type: http
-  server: 68.235.56.51
+  server: 138.199.35.212
+  port: 9002
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 美国-08-6.6MB/S
+  type: http
+  server: 138.199.35.212
+  port: 9002
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+- name: 美国-09-6.5MB/S
+  type: vless
+  server: 47.253.226.114
+  port: 443
+  udp: true
+  uuid: 055a1ce8-2a16-4a0d-a2c2-22826c9b2413
+  tls: true
+  servername: www.cloudflare.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: Svl81isn16RPAFnjtmYw7A6TPnsEPLHuYYaJht65Rzc
+    short-id: ''
+  packet-encoding: xudp
+- name: 美国-10-6.3MB/S
+  type: http
+  server: 138.199.35.198
+  port: 9002
+  udp: true
+  password: 'null'
+  tls: true
+  sni: 138.199.35.198
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  username: 'null'
+- name: 美国-11-6.3MB/S
+  type: http
+  server: 138.199.35.211
+  port: 9002
+  udp: true
+  password: 'null'
+  tls: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+  username: 'null'
+- name: 美国-12-6.0MB/S
+  type: http
+  server: 148.135.10.80
   port: 443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-- name: 美国-14-4.1MB/S
-  type: vmess
-  server: 104.21.7.133
-  port: 80
+- name: 美国-13-6.0MB/S
+  type: http
+  server: 38.95.111.226
+  port: 9443
   udp: true
-  uuid: 0cf6d970-3f1d-4aae-a989-92a8f76ae3db
-  alterId: '0'
-  cipher: auto
-  tls: false
-  alpn:
-  - ''
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    early-data-header-name: Sec-WebSocket-Protocol
-    headers:
-      Host: vmess.lbw666.dpdns.org
-    max-early-data: 2048
-    path: /ws
-  packet-encoding: xudp
-  sub_tag: M003-260806
-  xudp: true
-- name: 加拿大-01-5.9MB/S
-  type: trojan
-  server: 104.25.47.216
-  port: 443
-  udp: true
-  password: mitivpn
-  sni: de.mitivpn.in.net
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /
-- name: 加拿大-02-5.5MB/S
-  type: vless
-  server: 188.114.97.6
-  port: 443
-  udp: true
-  uuid: 93fa8bdb-9cca-4a3e-8355-b7c12e4f595e
   tls: true
-  servername: fornewiran.ade-1000.workers.dev
-  alpn:
-  - http/1.1
-  client-fingerprint: unsafe
-  network: ws
-  ws-opts:
-    headers:
-      Host: fornewiran.ade-1000.workers.dev
-      User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/57.0.2987.133 Safari/537.36
-    path: /vl/yLWNcuUuw1jlJpkDhGy
-    early-data-header-name: Sec-WebSocket-Protocol
-    max-early-data: 2560
-  encryption: none
-  packet-encoding: xudp
-  sub_tag: M003-260806
-  xudp: true
-- name: 加拿大-03-5.3MB/S
-  type: trojan
-  server: ca.tronsg.com
+  skip-cert-verify: true
+- name: 美国-14-5.9MB/S
+  type: ss
+  server: 79.110.53.169
+  port: 8080
+  udp: true
+  cipher: rc4-md5
+  password: 14fFPrbezE3HDZzsMOr6
+- name: 美国-15-5.9MB/S
+  type: ss
+  server: 15.204.247.244
   port: 443
   udp: true
-  password: Trojan@82164024
-  sni: ca.tronsg.com
+  cipher: aes-256-gcm
+  password: pKEW8JPByTVTLtM
+- name: 美国-16-5.9MB/S
+  type: ss
+  server: 107.151.182.197
+  port: 8080
+  udp: true
+  cipher: rc4-md5
+  password: 14fFPrbezE3HDZzsMOr6
+- name: 美国-17-5.9MB/S
+  type: vless
+  server: 172.66.47.45
+  port: 443
+  udp: true
+  uuid: e56059f1-5a1a-4d0a-a2d0-58ecb4eb2f3f
+  tls: true
+  servername: ezaccess-project-f62c30.pages.dev
   client-fingerprint: chrome
-- name: 加拿大-04-5.2MB/S
+  network: ws
+  ws-opts:
+    path: /eyJqdW5rIjoiZWlPODVjTnhnaSIsInByb3RvY29sIjoidmwiLCJtb2RlIjoicHJveHlpcCIsInBhbmVsSVBzIjpbXX0=?ed=2560
+    headers:
+      Host: ezaccess-project-f62c30.pages.dev
+  packet-encoding: xudp
+- name: 美国-18-5.9MB/S
+  type: ss
+  server: 79.110.54.250
+  port: 8080
+  udp: true
+  cipher: rc4-md5
+  password: 14fFPrbezE3HDZzsMOr6
+- name: 加拿大-01-7.3MB/S
   type: http
   server: 198.44.157.19
   port: 9443
@@ -239,287 +187,788 @@ proxies:
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-- name: 加拿大-05-4.8MB/S
-  type: http
-  server: 149.88.98.81
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: K001-260618
-- name: 加拿大-06-4.7MB/S
+- name: 加拿大-02-6.9MB/S
   type: vless
-  server: 188.114.96.9
+  server: 209.200.246.148
   port: 443
   udp: true
-  uuid: 2e305ebe-f6e6-4689-b32f-cd04ab5ff541
+  uuid: ca52e2b6-fb9f-4dac-b6dc-49da9923f251
   tls: true
-  servername: idb8onmvbntuyt5t7t6cejfw8vlrb.pages.dev
-  client-fingerprint: chrome
+  servername: www.cloudflare.com
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: uTmb-ytXsx8p0fkBz7A76SHpWk7_oVutIA4LGTE8BQk
+    short-id: f98843107912e782
+  packet-encoding: xudp
+- name: 加拿大-03-6.0MB/S
+  type: vmess
+  server: guanwang.awsno.com
+  port: 443
+  udp: true
+  uuid: 6a89a215-22bf-4bd7-9642-b95b2e09583a
+  alterId: 0
+  cipher: auto
+  tls: true
+  servername: guanwang.awsno.com
+  skip-cert-verify: true
   network: ws
   ws-opts:
+    path: /hls/cctv5phd.m3u8
     headers:
-      Host: idb8onmvbntuyt5t7t6cejfw8vlrb.pages.dev
-      User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.101 Safari/537.36
-    path: /vl/9yvcoLdzdOXLUYfH7r5gwJhu1CHrjfp=chrome
-  packet-encoding: xudp
-  sub_tag: T001-260618
-  xudp: true
-- name: 加拿大-07-4.7MB/S
+      Host: guanwang.awsno.com
+- name: 中国台湾-01-2.7MB/S
   type: vless
-  server: 104.21.70.21
+  server: 60.248.219.54
   port: 443
-  udp: true
-  uuid: 93fa8bdb-9cca-4a3e-8355-b7c12e4f595e
+  uuid: 06e177f7-240d-4687-bd85-235505801a5e
   tls: true
-  servername: fornewiran.ade-1000.workers.dev
-  alpn:
-  - http/1.1
-  client-fingerprint: unsafe
+  servername: ty986gfazs.cainiaohub.xyz
+  skip-cert-verify: true
   network: ws
   ws-opts:
+    path: /81574b6b-c9d7-44a0-b83d-dad56e8cb530
     headers:
-      Host: fornewiran.ade-1000.workers.dev
-      User-Agent: Mozilla/5.0 (Linux; Android 6.0.1; SM-G532M Build/MMB29T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36
-    path: /vl/yLWNcuUuw1jlJpkDhGy
-    early-data-header-name: Sec-WebSocket-Protocol
-    max-early-data: 2560
-  encryption: none
-  packet-encoding: xudp
-  sub_tag: M003-260806
-  xudp: true
-- name: 加拿大-08-4.2MB/S
-  type: vless
-  server: stf839dvvyog9d2qa4-b8z6ahgn7b7qi.pages.dev
-  port: 443
-  udp: true
-  uuid: b2f2f9f2-1864-48ea-839b-22815faff1f1
-  tls: true
-  servername: stf839dvvyog9d2qa4-b8z6ahgn7b7qi.pages.dev
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /
-  packet-encoding: xudp
-- name: 加拿大-09-4.1MB/S
-  type: trojan
-  server: 172.64.80.1
-  port: 443
-  udp: true
-  password: bpb-trojan
-  sni: vless.herogoing.top
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /tr?ed=2560
-- name: 加拿大-10-3.9MB/S
-  type: vless
-  server: 188.114.97.6
-  port: 443
-  udp: true
-  uuid: 3ccba794-1c6d-48a8-acf2-f5caf0e69d86
-  tls: true
-  servername: all.speedtest03.ccwu.cc
-  client-fingerprint: unsafe
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: all.speedtest03.ccwu.cc
-  packet-encoding: xudp
-- name: 加拿大-11-3.5MB/S
-  type: vless
-  server: 104.21.70.21
-  port: 8080
-  udp: true
-  uuid: fc60147e-76b8-4bc5-b691-90b2da79e3d2
-  network: ws
-  ws-opts:
-    path: /138.2.74.219-28616
-    headers:
-      Host: nautica-cff.kloningstrife002.workers.dev
-  packet-encoding: xudp
-- name: 加拿大-12-3.2MB/S
-  type: vless
-  server: 188.114.97.6
-  port: 8080
-  udp: true
-  uuid: a8b1d666-d3ba-4b17-90c4-ba7514c74f78
-  network: ws
-  ws-opts:
-    headers:
-      Host: xstack.mahanfixe.workers.dev
-      User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36
-    path: /xiron
-  encryption: none
-  packet-encoding: xudp
-  sub_tag: B007-260618
-  xudp: true
-- name: 瑞士-01-3.5MB/S
-  type: http
-  server: 149.88.27.46
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: K001-260618
-- name: 瑞士-02-3.5MB/S
-  type: http
-  server: 31.7.62.50
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 瑞士-03-3.2MB/S
-  type: http
-  server: 149.88.27.33
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 荷兰-01-4.7MB/S
-  type: trojan
-  server: 190.93.245.148
-  port: 443
-  udp: true
-  password: humanity
-  sni: www.pleadcourt.org
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /assignment
-- name: 荷兰-02-4.7MB/S
-  type: trojan
-  server: 45.131.4.38
-  port: 443
-  udp: true
-  password: humanity
-  sni: www.pleadcourt.org
-  client-fingerprint: chrome
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    headers:
-      User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2062.120 Safari/537.36
-    path: /assignment
-  sub_tag: F003-260618
-- name: 荷兰-03-4.0MB/S
-  type: trojan
-  server: 131.196.254.151
-  port: 443
-  udp: true
-  password: humanity
-  sni: www.pleadcourt.org
-  alpn:
-  - http/1.1
-  client-fingerprint: unsafe
-  skip-cert-verify: false
-  network: ws
-  ws-opts:
-    headers:
-      User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36
-    path: /assignment
-  sub_tag: S004-260618
-- name: 丹麦-01-3.7MB/S
-  type: http
-  server: 185.245.84.50
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 丹麦-02-3.2MB/S
-  type: http
-  server: 185.245.84.50
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 比利时-01-4.2MB/S
-  type: http
-  server: 146.70.123.98
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 比利时-02-3.7MB/S
-  type: http
-  server: 146.70.176.242
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 爱尔兰-01-3.7MB/S
-  type: http
-  server: 149.88.96.12
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 爱尔兰-02-3.5MB/S
-  type: http
-  server: 149.88.96.1
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 中国-01-0.0MB/S
-  type: http
-  server: 137.175.22.96
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 中国台湾-01-2.9MB/S
+      Host: ty986gfazs.cainiaohub.xyz
+- name: 中国台湾-02-1.7MB/S
   type: anytls
-  server: 684616s4.df6h451rh.xin
+  server: er8u54dh.df6h451rh.xin
   port: 443
   udp: true
   password: 0324fbc29561
+  sni: px.ads.linkedin.com
   skip-cert-verify: true
-- name: 中国香港-01-0.0MB/S
-  type: socks5
-  server: 123.58.219.171
-  port: 10808
+- name: 中国香港-01-2.5MB/S
+  type: anytls
+  server: svip.skycon808.com
+  port: 24318
+  udp: true
+  password: 87c6ad7b-e450-44a8-8088-bc2234d43de1
+  sni: hk08.jdddyy01.cc
+  skip-cert-verify: true
+- name: 中国香港-02-2.4MB/S
+  type: anytls
+  server: 654968169.df6h451rh.xin
+  port: 443
+  udp: true
+  password: 0324fbc29561
+  sni: images.ctfassets.net
+  skip-cert-verify: true
 - name: 乌克兰-01-1.2MB/S
+  type: vless
+  server: 83.147.18.75
+  port: 443
+  udp: true
+  uuid: 5de0c218-0138-45d8-94d2-c2c3f37a1a6d
+  tls: true
+  servername: www.bing.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: tfFzmbVByvoZxxIEUiHMv22_k0-nQz00L0XjU0bd_Fc
+    short-id: 7f1e29593aa94ad1
+  packet-encoding: xudp
+- name: 乌克兰-02-1.0MB/S
   type: vless
   server: staging.lastilhame.monster
   port: 443
   udp: true
-  uuid: 106d20f6-d70a-40e2-b69b-8e82baf8d117
+  uuid: 455cfdc6-9abf-4e40-863f-5ff6cc63457c
   tls: true
   servername: www.microsoft.com
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   reality-opts:
     public-key: FjcEZNQ8t5E4R04_11T6ghsOutdqwKKrelkuadakoQg
-    short-id: 60500a63ad12
+    short-id: 18e4d2d21241
   packet-encoding: xudp
-- name: 亚美尼亚-01-2.0MB/S
-  type: vless
-  server: 194.36.37.59
-  port: 10004
+- name: 俄罗斯-01-3.0MB/S
+  type: http
+  server: chalo-ru.nexorcdn.com
+  port: 44008
   udp: true
-  uuid: f7376394-cd54-11f1-bb6a-bff6d0326f6a
+  password: 9jkvAVV-9ufV6IGd
+  tls: true
+  sni: chalo-ru.nexorcdn.com
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  username: ef37886e2aacd6fa622e3de3810299c2
+- name: 俄罗斯-02-2.0MB/S
+  type: http
+  server: 46.29.166.134
+  port: 1446
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 保加利亚-01-2.2MB/S
+  type: ss
+  server: 213.183.63.60
+  port: 9028
+  udp: true
+  cipher: aes-256-cfb
+  password: 9eeJ2fwnZA5Fxgz8
+- name: 保加利亚-02-2.2MB/S
+  type: ss
+  server: 213.183.63.60
+  port: 9054
+  udp: true
+  cipher: aes-256-cfb
+  password: VcFuyXvND2yQWSFY
+- name: 南非-01-1.4MB/S
+  type: ss
+  server: 102.37.156.224
+  port: 443
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: aduB9HGxQHjA2SBMRjkHX6
+- name: 南非-02-1.2MB/S
+  type: ss
+  server: 102.133.165.160
+  port: 16233
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: Xsy8Ox4yOV3xLlpxtjzs3X
+- name: 印度-01-2.2MB/S
+  type: trojan
+  server: in.tronsg.com
+  port: 443
+  udp: true
+  password: Trojan@82164024
+  sni: in.tronsg.com
+  skip-cert-verify: true
+- name: 印度-02-2.1MB/S
+  type: vless
+  server: in.smrtai.top
+  port: 443
+  udp: true
+  uuid: 6bdc8320-7eae-46fc-be08-f5f54e65dfc8
+  tls: true
+  servername: www.cloudflare.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: 3LbVuwKpQv55GngyRhvGl9KyAHIDAgvJx_VRM5mUD2Q
+    short-id: 6bdc8320
+  packet-encoding: xudp
+- name: 印度尼西亚-01-1.9MB/S
+  type: http
+  server: 103.86.117.202
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 印度尼西亚-02-1.5MB/S
+  type: http
+  server: 103.86.116.118
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 土耳其-01-2.4MB/S
+  type: vless
+  server: 151.241.226.201
+  port: 2053
+  udp: true
+  uuid: 0eed6293-8cf1-4e77-ac10-9c3d50d0b2f8
+  tls: true
+  servername: www.apple.com
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: bYW_MmB_CUHrsyoCAUKviI2LZdHf63yY2yOPXbih104
+    short-id: 9e419c0759b54d6f
+  packet-encoding: xudp
+- name: 土耳其-02-2.4MB/S
+  type: vless
+  server: 62.133.63.45
+  port: 8444
+  udp: true
+  uuid: a346c521-7a7f-452b-9356-a4893feb5982
+  tls: true
+  servername: github.com
+  client-fingerprint: safari
+  reality-opts:
+    public-key: FWitre1jinQR7qz5HQ0q2Q4Gg9xA9B0SyizCziN7Ch0
+    short-id: 457fab2ac885dbe0
+  network: grpc
+  grpc-opts:
+    grpc-service-name: GunService
+  packet-encoding: xudp
+- name: 德国-01-4.2MB/S
+  type: ss
+  server: 57.129.113.16
+  port: 8388
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: NcAXc0UZI6yQJE1p8QmOv8
+- name: 德国-02-4.0MB/S
+  type: vless
+  server: 77.91.66.41
+  port: 8443
+  udp: true
+  uuid: 495c7195-85b8-498a-bf20-2ea9ce9175b5
+  tls: true
+  servername: snip.edgeoneai.cc.cd
+  client-fingerprint: chrome
   network: ws
   ws-opts:
-    path: /vpnjantit
+    headers:
+      Host: snip.edgeoneai.cc.cd
+      User-Agent: Mozilla/5.0 (Linux; Android 5.1.1; A37fw Build/LMY47V) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.84 Mobile Safari/537.36
+    path: /
+  encryption: none
   packet-encoding: xudp
-- name: 以色列-01-2.6MB/S
+  sub_tag: F003-260618
+  xudp: true
+- name: 意大利-01-3.1MB/S
+  type: http
+  server: 93.42.177.250
+  port: 443
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 意大利-02-2.9MB/S
+  type: vless
+  server: 57.131.38.163
+  port: 2053
+  udp: true
+  uuid: d4b08cd6-0903-411a-9dac-45dbdf5c9712
+  tls: true
+  servername: www.apple.com
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: Ej2H5ucT7qKegYcT8wODdlxa-cLHr7F4hDVUHzAhcnc
+    short-id: 5b8a942318178e7b
+  packet-encoding: xudp
+- name: 拉脱维亚-01-2.9MB/S
+  type: ss
+  server: 185.135.86.175
+  port: 9086
+  udp: true
+  cipher: aes-256-cfb
+  password: 37Z4TFCYhfxcpc9Q
+- name: 拉脱维亚-02-2.3MB/S
+  type: vless
+  server: 195.123.208.32
+  port: 443
+  udp: true
+  uuid: 1ebcb694-875c-4be7-b6a2-d53c8208991b
+  tls: true
+  servername: gateway.icloud.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: ICrsmE5hqN7IsDIyHPG2WkDUUFK_VEj9yobLv8zuDwk
+    short-id: 757b9e1ef18e60f0
+  packet-encoding: xudp
+- name: 挪威-01-0.8MB/S
+  type: vless
+  server: pl1.h1cloud.net
+  port: 27591
+  udp: true
+  uuid: 056405e8-de9f-4d0d-8145-956f13cc34da
+  tls: true
+  servername: www.samsung.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: LY0H47MWx87_L_JBzxFAuTzKZB53U7MrZQK8-dNnMxM
+    short-id: 6c5c7900406a1ae7
+  packet-encoding: xudp
+- name: 挪威-02-0.0MB/S
+  type: ss
+  server: 185.213.23.63
+  port: 990
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: ARgvGZywA+gacgGV26Bvmu05+wZmRW/j+AdU+Z8Bt44=
+- name: 捷克-01-2.2MB/S
+  type: http
+  server: 193.35.104.196
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 捷克-02-1.9MB/S
+  type: ss
+  server: 67.159.18.34
+  port: 17001
+  udp: true
+  cipher: aes-256-gcm
+  password: I6o9NnialYLMEjVt28RF4dpjmr9wMvNL
+- name: 斯里兰卡-01-2.7MB/S
+  type: vless
+  server: centurylink.es
+  port: 8443
+  udp: true
+  uuid: c136a12c-4260-48a7-a1e6-fbda83a11045
+  tls: true
+  servername: free.sahanwickramasinghe.me
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: free.sahanwickramasinghe.me
+  packet-encoding: xudp
+- name: 斯里兰卡-02-2.4MB/S
+  type: vless
+  server: 104.17.73.206
+  port: 8443
+  udp: true
+  uuid: c136a12c-4260-48a7-a1e6-fbda83a11045
+  tls: true
+  servername: free.sahanwickramasinghe.me
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: free.sahanwickramasinghe.me
+  packet-encoding: xudp
+- name: 新加坡-01-2.7MB/S
+  type: http
+  server: 52.221.234.145
+  port: 2080
+  udp: true
+  password: '1234'
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  username: '1234'
+- name: 新加坡-02-2.7MB/S
+  type: vless
+  server: 172.237.88.103
+  port: 443
+  udp: true
+  uuid: efd11a89-7506-44ce-95b6-6654859f155b
+  tls: true
+  servername: zoom.us
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: EeLAX-BAjzSdRes-zpUFzVOYsBedmP8lUOHhXXJFXyI
+    short-id: 5a42dbd7e26a0415
+  network: tcp
+- name: 日本-01-3.8MB/S
+  type: vless
+  server: 129.151.64.169
+  port: 31867
+  udp: true
+  uuid: 112c9db0-af6f-48b0-a59f-7677bed8e2d7
+  tls: true
+  servername: 5iv93opy8jus9z.bjo5si35c9i9ud4242fado49188obkoiermjuxj7zgxu.workers.dev
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /@Marisa_kristi
+    headers:
+      Host: 5iv93opy8jus9z.bjo5si35c9i9ud4242fado49188obkoiermjuxj7zgxu.workers.dev
+  packet-encoding: xudp
+- name: 日本-02-3.8MB/S
+  type: vless
+  server: 185.125.103.62
+  port: 8082
+  udp: true
+  uuid: 72af1965-ec91-4376-82b1-75be51885506
+  tls: true
+  servername: mw5qisav.wjwqvie0wb1eqhb8e83clqdoq3m5p9a4on.workers.dev
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    headers:
+      Host: mw5qisav.wjwqvie0wb1eqhb8e83clqdoq3m5p9a4on.workers.dev
+      User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.63 Safari/537.36
+    path: /@Marisa_kristi
+  packet-encoding: xudp
+  sub_tag: F003-260618
+  xudp: true
+- name: 法国-01-5.7MB/S
+  type: hysteria2
+  server: 173.212.201.85
+  port: 443
+  udp: true
+  password: gf1:gfhysteria2024
+  sni: www.docker.com
+  skip-cert-verify: true
+- name: 法国-02-5.5MB/S
+  type: hysteria2
+  server: 62.210.124.146
+  port: 22000
+  udp: true
+  password: dongtaiwang.com
+  sni: www.microsoft.com
+  skip-cert-verify: true
+- name: 波兰-01-2.7MB/S
+  type: vless
+  server: 82.118.22.161
+  port: 443
+  udp: true
+  uuid: 05488656-d4bf-4634-8b2e-e4ff5a56c7e2
+  tls: true
+  servername: www.cloudflare.com
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  reality-opts:
+    public-key: xY1KpNxaIGmi6jfeudYQ_aaLGQqWK_uHStnwUFd2_2E
+    short-id: fa3ea655619a3e78
+  packet-encoding: xudp
+- name: 波兰-02-2.2MB/S
+  type: vless
+  server: edge10.cyrionflare.com
+  port: 2052
+  udp: true
+  uuid: 1a8ecc41-6e62-431b-8eca-87c2fa4dc286
+  packet-encoding: xudp
+- name: 泰国-01-3.0MB/S
+  type: vless
+  server: 104.16.111.193
+  port: 443
+  udp: true
+  uuid: 3c52e091-6714-4915-949f-2149fe69951b
+  tls: true
+  servername: v2ray.simspeedup.com
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: v2ray.simspeedup.com
+  packet-encoding: xudp
+- name: 泰国-02-2.5MB/S
+  type: ss
+  server: pphfree2.mvpnpvpn.de5.net
+  port: 52351
+  udp: true
+  cipher: aes-256-gcm
+  password: sxajCTwrlK0zl+zmHpX0p0jXIfatnzlLzWlSQ950L1c=
+  sub_tag: B007-260618
+- name: 澳大利亚-01-2.7MB/S
+  type: hysteria2
+  server: 152.67.115.203
+  port: 443
+  udp: true
+  password: 633bc3be486b646190661ac2387c150a
+  sni: www.bing.com
+  skip-cert-verify: true
+  obfs: salamander
+  obfs-password: 850a3fb1cd33a28f12d837578ae1a2e7
+- name: 澳大利亚-02-1.7MB/S
+  type: vless
+  server: 51.161.204.244
+  port: 443
+  udp: true
+  uuid: 36e89875-9c53-482b-bc41-d3890e9da176
+  tls: true
+  servername: www.cloudflare.com
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: gCAazs5uxNuMZIxfDdw8wPE0nwKY4QfBfBkQveKAkEk
+    short-id: 0ad08b47f498efd2
+  packet-encoding: xudp
+- name: 爱尔兰-01-2.3MB/S
+  type: http
+  server: 18.200.158.139
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 爱尔兰-02-2.3MB/S
+  type: http
+  server: 34.249.214.108
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 瑞典-01-2.4MB/S
+  type: vless
+  server: 193.188.21.253
+  port: 10444
+  udp: true
+  uuid: 57f7772d-f5d6-4d8f-992d-5fa5e0d6da55
+  tls: true
+  servername: video.yandex.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: 0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo
+    short-id: 8debcf36f1cc69ff
+  packet-encoding: xudp
+- name: 瑞典-02-1.9MB/S
+  type: anytls
+  server: svip.skycon808.com
+  port: 60005
+  udp: true
+  password: 13f0acfa-38c1-4e82-a758-583aa31740df
+  sni: svip.skycon808.com
+  skip-cert-verify: true
+- name: 瑞士-01-2.9MB/S
+  type: vless
+  server: 45.90.59.15
+  port: 443
+  udp: true
+  uuid: 3950b45e-740d-4dca-ac95-505ec8534592
+  tls: true
+  servername: www.cloudflare.com
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: P7S4UPFlQbmiBr4txyy8NZIMTrmO3UdxyH16WBU-YzY
+    short-id: 19253fae84102271
+  packet-encoding: xudp
+- name: 瑞士-02-1.3MB/S
+  type: vless
+  server: 208.69.78.217
+  port: 2053
+  udp: true
+  uuid: c0dd6d59-1573-43af-8b70-1470b2632a6d
+  tls: true
+  servername: www.apple.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: A49ue7zXSusJZdErPAewg3jqGdUFIO1a9xOunEKJfC0
+    short-id: ad86e2d52ff40ebd
+  packet-encoding: xudp
+- name: 立陶宛-01-2.6MB/S
+  type: vless
+  server: skelmoridianservice.com
+  port: 443
+  udp: true
+  uuid: af381781-3a00-4565-b1bc-4df0275eb4b9
+  tls: true
+  servername: www.velunatrixes.com
+  client-fingerprint: chrome
+  skip-cert-verify: true
+  reality-opts:
+    public-key: C6nh6hqFTbtizgSH8vGmw2XUxsQAbAW3jPylpgGvfl4
+    short-id: a1b2c3d4e5f6a7b8
+  network: grpc
+  grpc-opts:
+    grpc-service-name: moktana.net.v1.StreamService
+- name: 立陶宛-02-2.1MB/S
+  type: ss
+  server: 195.238.126.20
+  port: 9086
+  udp: true
+  cipher: aes-256-cfb
+  password: 37Z4TFCYhfxcpc9Q
+  sub_tag: A004-260618
+- name: 罗马尼亚-01-2.9MB/S
+  type: hysteria2
+  server: 185.156.44.99
+  port: 443
+  udp: true
+  password: gf1:gfhysteria2024
+  sni: whatsapp.com
+  skip-cert-verify: true
+- name: 罗马尼亚-02-2.8MB/S
+  type: http
+  server: 193.176.84.36
+  port: 9002
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+- name: 芬兰-01-3.7MB/S
+  type: hysteria2
+  server: 2.26.3.75
+  port: 443
+  udp: true
+  password: d5530551-5e9a-4ac5-8539-cee87e38d9e2
+  sni: fi.67chat.ru
+- name: 芬兰-02-3.2MB/S
+  type: http
+  server: 65.109.179.56
+  port: 8080
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 英国-01-4.1MB/S
+  type: ss
+  server: 98.98.207.163
+  port: 8080
+  udp: true
+  cipher: rc4-md5
+  password: 14fFPrbezE3HDZzsMOr6
+- name: 英国-02-3.0MB/S
+  type: vless
+  server: 51.89.194.151
+  port: 2053
+  udp: true
+  uuid: 8e790f25-1d71-4601-9fb0-d503931dcfca
+  tls: true
+  servername: www.apple.com
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: xPEBx4wUmwAAv4ikUALNBf5wH6TRhyeQ0Q2pcNELsV0
+    short-id: d051f678212f9d54
+  packet-encoding: xudp
+- name: 荷兰-01-5.9MB/S
+  type: hysteria2
+  server: 5.129.235.85
+  port: 443
+  udp: true
+  password: gf1:gfhysteria2024
+  sni: www.linux.com
+  skip-cert-verify: true
+- name: 荷兰-02-4.9MB/S
+  type: vless
+  server: 103.133.1.160
+  port: 80
+  udp: true
+  uuid: eaf76557-2219-4799-8171-d7020adfefd0
+  network: ws
+  ws-opts:
+    headers:
+      Host: soft-shadow-1e33.xicav73335.workers.dev
+      User-Agent: Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.80 Safari/537.36
+    path: /ws
+  packet-encoding: xudp
+  sub_tag: F003-260618
+  xudp: true
+- name: 西班牙-01-3.2MB/S
+  type: vless
+  server: 193.238.154.78
+  port: 443
+  udp: true
+  uuid: 897d47f8-4dd5-42a1-bcd0-bef19caff55a
+  tls: true
+  servername: gateway.icloud.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: 4eE3K8Eac-ELze-LwRyJolqmhPqgCVqwQM1DKu6i0Ts
+    short-id: e93d46ee3735069e
+  packet-encoding: xudp
+- name: 西班牙-02-2.0MB/S
+  type: http
+  server: 80.24.34.107
+  port: 8090
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+- name: 阿联酋-01-2.2MB/S
+  type: vless
+  server: 185.253.116.33
+  port: 14430
+  udp: true
+  uuid: aee7ae19-672f-49d8-8a92-aa7cdfc89f89
+  network: ws
+  ws-opts:
+    path: /vless
+    headers:
+      Host: 185.253.116.33
+  packet-encoding: xudp
+- name: 阿联酋-02-1.3MB/S
+  type: vless
+  server: uae.unixzone.us
+  port: 22573
+  udp: true
+  uuid: 39947382-3212-41c9-bc3a-589574ac8b23
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: uae.unixzone.us
+  packet-encoding: xudp
+- name: 韩国-01-2.9MB/S
+  type: vless
+  server: 151.245.106.49
+  port: 2053
+  udp: true
+  uuid: a2de9567-9646-45a9-a410-7303a43bdb6c
+  tls: true
+  servername: www.cloudflare.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: F6C33iIbfmt1mUsuLTarIC8ygdHKMqsaGvrSQltyxUo
+    short-id: 429499c03d4cc8a0
+  packet-encoding: xudp
+- name: 韩国-02-2.7MB/S
+  type: vmess
+  server: 217.142.138.61
+  port: 80
+  udp: true
+  uuid: ac1b933d-afff-4487-93ef-f57130a55dff
+  alterId: 0
+  cipher: auto
+  network: http
+  http-opts:
+    path:
+    - /
+- name: 马来西亚-01-3.0MB/S
+  type: vless
+  server: vpn.cintaku.qzz.io
+  port: 443
+  udp: true
+  uuid: fc7d2cfe-f5ef-40c8-a848-a0bdc11f6349
+  tls: true
+  servername: vpn.cintaku.qzz.io
+  client-fingerprint: unsafe
+  network: ws
+  ws-opts:
+    path: /vlessws
+    headers:
+      Host: vpn.cintaku.qzz.io
+  packet-encoding: xudp
+- name: 马来西亚-02-2.4MB/S
+  type: vless
+  server: 188.114.98.0
+  port: 443
+  udp: true
+  uuid: fc7d2cfe-f5ef-40c8-a848-a0bdc11f6349
+  tls: true
+  servername: vpn.cintaku.qzz.io
+  alpn:
+  - http/1.1
+  client-fingerprint: unsafe
+  network: ws
+  ws-opts:
+    headers:
+      Host: vpn.cintaku.qzz.io
+      User-Agent: Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36
+    path: /vlessws
+  encryption: none
+  packet-encoding: xudp
+  sub_tag: M003-260806
+  xudp: true
+- name: 丹麦-01-2.0MB/S
+  type: vless
+  server: 193.233.253.180
+  port: 8444
+  udp: true
+  uuid: f55e9aba-7b14-4f6f-b59a-d5b3d45c9309
+  tls: true
+  servername: github.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: FWitre1jinQR7qz5HQ0q2Q4Gg9xA9B0SyizCziN7Ch0
+    short-id: 457fab2ac885dbe0
+  network: grpc
+  grpc-opts:
+    grpc-service-name: GunService
+  packet-encoding: xudp
+- name: 亚美尼亚-01-1.5MB/S
+  type: vless
+  server: 77.91.68.70
+  port: 55983
+  udp: true
+  uuid: f667a096-5231-4cfb-8759-92bb32473139
+  tls: true
+  servername: yahoo.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: nWQ7b9l9X6N3PrXLgIzOvMM8iSYrqjVHEb9ikWxqYSg
+    short-id: 0e
+  packet-encoding: xudp
+- name: 以色列-01-2.9MB/S
   type: http
   server: 62.90.77.30
   port: 443
@@ -527,22 +976,7 @@ proxies:
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-- name: 伊朗-01-0.0MB/S
-  type: vless
-  server: 45.131.4.30
-  port: 8880
-  udp: true
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    headers:
-      Host: vms.lifetime59.workers.dev
-      User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.90 Safari/537.36
-    path: /
-  encryption: none
-  packet-encoding: xudp
-  xudp: true
-- name: 伯利兹-01-0.0MB/S
+- name: 伯利兹-01-2.2MB/S
   type: vless
   server: 45.131.209.30
   port: 8880
@@ -557,94 +991,7 @@ proxies:
   encryption: none
   packet-encoding: xudp
   xudp: true
-- name: 俄罗斯-01-3.2MB/S
-  type: http
-  server: chalo-ru.nexorcdn.com
-  port: 51320
-  udp: true
-  password: 9jkvAVV-9ufV6IGd
-  tls: true
-  sni: chalo-ru.nexorcdn.com
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  username: ef37886e2aacd6fa622e3de3810299c2
-- name: 保加利亚-01-2.9MB/S
-  type: http
-  server: 169.150.237.1
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 克罗地亚-01-2.7MB/S
-  type: http
-  server: 154.47.29.174
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 冰岛-01-3.7MB/S
-  type: http
-  server: 185.165.170.1
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 匈牙利-01-0.0MB/S
-  type: http
-  server: 146.70.203.18
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 南非-01-3.9MB/S
-  type: ss
-  server: 102.133.165.160
-  port: 16233
-  udp: true
-  cipher: chacha20-ietf-poly1305
-  password: Xsy8Ox4yOV3xLlpxtjzs3X
-- name: 卢森堡-01-3.7MB/S
-  type: http
-  server: 185.221.132.226
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 印度-01-2.7MB/S
-  type: vless
-  server: 194.61.31.126
-  port: 2053
-  udp: true
-  uuid: 1d4e18bd-1f26-4915-b35a-7ace4826e76a
-  tls: true
-  servername: www.apple.com
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: PuAGLfJy6cu1TNoHuKIKSxPetCbZI41fc8hQDjWPIAU
-    short-id: 9980e0609b0d3891
-  packet-encoding: xudp
-- name: 印度尼西亚-01-1.8MB/S
-  type: http
-  server: 103.86.117.202
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 厄瓜多尔-01-0.0MB/S
-  type: http
-  server: 38.165.231.71
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 哈萨克斯坦-01-1.4MB/S
+- name: 哈萨克斯坦-01-1.3MB/S
   type: vless
   server: 109.248.170.119
   port: 13447
@@ -657,82 +1004,7 @@ proxies:
     public-key: _0wM2ep44eAcrgf5PflKaBivknCWT6kMvQBQUoScCkE
     short-id: '83'
   packet-encoding: xudp
-- name: 哥斯达黎加-01-0.0MB/S
-  type: vless
-  server: help1.digikala-aparat-zula.com
-  port: 443
-  udp: true
-  uuid: af51de90-852d-4eb6-a0c3-9ecca170385e
-  tls: true
-  servername: wallweb-av6.pages.dev
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: wallweb-av6.pages.dev
-  packet-encoding: xudp
-- name: 喀麦隆-01-0.1MB/S
-  type: http
-  server: 102.244.78.61
-  port: 8084
-  udp: true
-  tls: false
-  skip-cert-verify: false
-  sub_tag: M001-260618
-- name: 土耳其-01-2.3MB/S
-  type: vless
-  server: 151.241.226.201
-  port: 2053
-  udp: true
-  uuid: 0eed6293-8cf1-4e77-ac10-9c3d50d0b2f8
-  tls: true
-  servername: www.apple.com
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: bYW_MmB_CUHrsyoCAUKviI2LZdHf63yY2yOPXbih104
-    short-id: 9e419c0759b54d6f
-  packet-encoding: xudp
-- name: 塞尔维亚-01-2.5MB/S
-  type: http
-  server: 146.70.221.18
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 塞浦路斯-01-0.0MB/S
-  type: vless
-  server: 195.85.59.30
-  port: 8880
-  udp: true
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    headers:
-      Host: vms.lifetime58.workers.dev
-      User-Agent: Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit/534.3 (KHTML, like Gecko) Chrome/6.0.472.63 Safari/534.3
-    path: /
-  packet-encoding: xudp
-  sub_tag: C002-260622
-  xudp: true
-- name: 塞舌尔-01-0.0MB/S
-  type: vless
-  server: 45.130.125.30
-  port: 8880
-  udp: true
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    headers:
-      Host: vms.lifetime58.workers.dev
-      User-Agent: Mozilla/5.0 (Windows NT 5.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.80 Safari/537.36
-    path: /
-  encryption: none
-  packet-encoding: xudp
-  sub_tag: C002-260622
-  xudp: true
-- name: 墨西哥-01-0.0MB/S
+- name: 墨西哥-01-2.9MB/S
   type: http
   server: 45.134.9.41
   port: 443
@@ -741,256 +1013,30 @@ proxies:
   sni: 991cc80f13caf81d3426ddebb2da7f49-240d6105b6ef86f0.apache-iv.com
   skip-cert-verify: true
   sub_tag: R002-260618
-- name: 奥地利-01-2.7MB/S
-  type: http
-  server: 146.70.244.18
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 巴西-01-2.9MB/S
-  type: http
-  server: 134.65.17.77
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 希腊-01-2.1MB/S
-  type: vless
-  server: 85.90.197.220
-  port: 443
-  udp: true
-  uuid: 8f704ed6-9a1a-4d04-94dd-1bff501716de
-  tls: true
-  servername: www.cloudflare.com
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  reality-opts:
-    public-key: biNcdU5mywtNw-KyPpLHindBxdEyAolT1WJ26N0b7y4
-    short-id: 94acb54627612d43
-  packet-encoding: xudp
-- name: 库拉索-01-0.0MB/S
-  type: vless
-  server: 62.72.166.30
-  port: 8880
-  udp: true
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: vms.lifetime40.workers.dev
-  packet-encoding: xudp
-- name: 德国-01-4.5MB/S
+- name: 奥地利-01-2.4MB/S
   type: ss
-  server: 185.226.172.8
-  port: 8008
+  server: 82.110.60.9
+  port: 19999
   udp: true
   cipher: aes-256-gcm
-  password: XKFKl2rULjIp74
-- name: 意大利-01-4.0MB/S
-  type: http
-  server: 93.42.177.250
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 拉脱维亚-01-2.7MB/S
-  type: http
-  server: 109.248.147.66
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 挪威-01-2.5MB/S
-  type: http
-  server: 146.70.170.210
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 捷克-01-3.0MB/S
-  type: vless
-  server: 195.123.245.241
-  port: 443
-  udp: true
-  uuid: 7c053ca8-38cc-45e2-930c-eda1fd66f903
-  tls: true
-  servername: gateway.icloud.com
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  reality-opts:
-    public-key: hlY5ce1UsVIgE46y5PlEZhUsSaXUnCtoDLLaGrhInjw
-    short-id: 23d0950d60bc0d5b
-  packet-encoding: xudp
-- name: 摩尔多瓦-01-0.0MB/S
-  type: vless
-  server: 194.180.191.249
-  port: 443
-  udp: true
-  uuid: 817b61c8-9bf0-4365-8a52-e43dfad274a6
-  tls: true
-  servername: shin-ra.ccwu.cc
-  client-fingerprint: unsafe
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: shin-ra.ccwu.cc
-  packet-encoding: xudp
-- name: 新加坡-01-2.0MB/S
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: 爱沙尼亚-01-0.5MB/S
   type: vmess
-  server: ww11.levikogjgfdd.ir
-  port: 18000
+  server: eu3.998998.best
+  port: 443
   udp: true
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  uuid: 5504eaa8-1395-402f-8e0e-75ecd762e627
   alterId: 0
   cipher: auto
-- name: 新西兰-01-0.0MB/S
-  type: vless
-  server: 114.129.43.30
-  port: 8880
-  udp: true
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
+  tls: true
+  servername: server40.9966338.xyz
+  skip-cert-verify: true
   network: ws
   ws-opts:
+    path: /aiaiai
     headers:
-      Host: vms.lifetime04.workers.dev
-      User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36
-    path: /
-  packet-encoding: xudp
-  sub_tag: C002-260622
-  xudp: true
-- name: 日本-01-3.4MB/S
-  type: vless
-  server: 154.31.114.248
-  port: 50159
-  udp: true
-  uuid: d56624b2-35bb-468c-9b2a-e0b0df7230c1
-  tls: true
-  servername: www.cloudflare.com
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  reality-opts:
-    public-key: j4QXngGuJkUGwRj4XIrfHRohYYuEfnJlX4cvCE-WklA
-    short-id: 091e1c5db8451757
-  packet-encoding: xudp
-- name: 智利-01-0.0MB/S
-  type: vless
-  server: 64.176.9.246
-  port: 443
-  udp: true
-  uuid: 51a0af77-a60c-4d9b-81a4-f50e1b38d90b
-  tls: true
-  servername: cf3.schzyc.cc.cd
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    headers:
-      Host: cf3.schzyc.cc.cd
-      User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36
-    path: /proxyip=ProxyIP.CMLiussss.net
-  packet-encoding: xudp
-  sub_tag: A004-260618
-  xudp: true
-- name: 格鲁吉亚-01-0.0MB/S
-  type: http
-  server: 195.54.178.210
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 法国-01-2.2MB/S
-  type: vless
-  server: 138.124.70.41
-  port: 14430
-  udp: true
-  uuid: 6cc745e3-4eb9-46c8-a4a1-85dee7b87edc
-  network: ws
-  ws-opts:
-    path: /vless
-    headers:
-      Host: 138.124.70.41
-  packet-encoding: xudp
-- name: 波兰-01-2.7MB/S
-  type: vless
-  server: 54.37.136.194
-  port: 2053
-  udp: true
-  uuid: e8a432c8-5d84-49a5-b822-67ed761a58f9
-  tls: true
-  servername: www.cloudflare.com
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: Vemd9Jjk5xKO8qSC3g8VVagwcb4J1BcTvp86CswQC0A
-    short-id: 50ba05992b05c1c3
-  packet-encoding: xudp
-- name: 波黑-01-0.0MB/S
-  type: http
-  server: 185.164.35.16
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 泰国-01-2.2MB/S
-  type: ss
-  server: pphfree2.mvpnpvpn.de5.net
-  port: 52351
-  udp: true
-  cipher: aes-256-gcm
-  password: sxajCTwrlK0zl+zmHpX0p0jXIfatnzlLzWlSQ950L1c=
-  sub_tag: B007-260618
-- name: 澳大利亚-01-3.4MB/S
-  type: hysteria2
-  server: 152.67.115.203
-  port: 443
-  udp: true
-  password: 633bc3be486b646190661ac2387c150a
-  sni: www.bing.com
-  skip-cert-verify: true
-  obfs: salamander
-  obfs-password: 850a3fb1cd33a28f12d837578ae1a2e7
-- name: 爱沙尼亚-01-3.2MB/S
-  type: http
-  server: 95.153.31.66
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 瑞典-01-2.7MB/S
-  type: http
-  server: 146.70.242.146
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-- name: 白俄罗斯-01-0.0MB/S
-  type: vless
-  server: 95.130.84.36
-  port: 8443
-  udp: true
-  uuid: 8d42d29a-ed53-4684-a9ff-6b33826149de
-  tls: true
-  servername: aio.eth0.dpdns.org
-  client-fingerprint: unsafe
-  network: ws
-  ws-opts:
-    path: /aioproxybot/94.23.144.99-2053
-    headers:
-      Host: aio.eth0.dpdns.org
-  packet-encoding: xudp
-- name: 秘鲁-01-0.0MB/S
+      Host: server40.9966338.xyz
+- name: 秘鲁-01-3.0MB/S
   type: vless
   server: 154.218.15.50
   port: 8880
@@ -1008,51 +1054,7 @@ proxies:
   packet-encoding: xudp
   sub_tag: M003-260806
   xudp: true
-- name: 立陶宛-01-2.3MB/S
-  type: vless
-  server: skelmoridianservice.com
-  port: 443
-  udp: true
-  uuid: af381781-3a00-4565-b1bc-4df0275eb4b9
-  tls: true
-  servername: www.velunatrixes.com
-  client-fingerprint: chrome
-  skip-cert-verify: true
-  reality-opts:
-    public-key: C6nh6hqFTbtizgSH8vGmw2XUxsQAbAW3jPylpgGvfl4
-    short-id: a1b2c3d4e5f6a7b8
-  network: grpc
-  grpc-opts:
-    grpc-service-name: moktana.net.v1.StreamService
-- name: 罗马尼亚-01-0.0MB/S
-  type: hysteria2
-  server: 185.156.44.99
-  port: 443
-  udp: true
-  password: gf1:gfhysteria2024
-  sni: whatsapp.com
-  skip-cert-verify: true
-- name: 芬兰-01-3.6MB/S
-  type: vless
-  server: 45.144.234.157
-  port: 14430
-  udp: true
-  uuid: 59b0d30e-9b29-4fda-a35c-b2901ec32db7
-  network: ws
-  ws-opts:
-    path: /vless
-    headers:
-      Host: 45.144.234.157
-  packet-encoding: none
-- name: 英国-01-2.7MB/S
-  type: http
-  server: 84.17.50.214
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 英属维尔京群岛-01-0.0MB/S
+- name: 英属维尔京群岛-01-3.9MB/S
   type: vless
   server: 45.142.120.30
   port: 8880
@@ -1063,28 +1065,39 @@ proxies:
     path: /
     headers:
       Host: vms.lifetime08.workers.dev
-- name: 葡萄牙-01-0.0MB/S
-  type: http
-  server: 149.22.86.14
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-- name: 西班牙-01-3.5MB/S
+- name: 葡萄牙-01-2.2MB/S
   type: vless
-  server: 212.227.235.66
+  server: 31.192.237.186
   port: 2053
   udp: true
-  uuid: ead0dd61-d398-40ad-80d6-a0e1e516d7d3
+  uuid: d18c6897-2849-456a-8c46-d7ecece47c20
   tls: true
-  servername: www.apple.com
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: 7Y6Xb5Ql_03K25x8yKUSOKI2JTOMyv2nyCcFza90uxk
-    short-id: 29e8dcd2b37aaa7f
+  servername: wzs.echo.net.eu.org
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    headers:
+      Host: wzs.echo.net.eu.org
+      User-Agent: Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36
+    path: /video/HxNMGkZdGw0PRk1GVw8YF14OXkwNVVtIRg1HUlxQSwUEVRwJUx8BQRoaSVhfRhoOChkDDUs=
   packet-encoding: xudp
-- name: 阿尔巴尼亚-01-2.2MB/S
+  sub_tag: A004-260618
+  xudp: true
+- name: 越南-01-0.9MB/S
+  type: vless
+  server: 154.21.203.106
+  port: 51279
+  udp: true
+  uuid: 57beeeb0-03fc-4fc9-94da-7604488a7134
+  tls: true
+  servername: www.tesla.com
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  reality-opts:
+    public-key: f6Tj8-uvWsLv3V-lGLuPciArp5oKqUImBg-U7-WJ-0A
+    short-id: bb82c8
+  packet-encoding: xudp
+- name: 阿尔巴尼亚-01-1.9MB/S
   type: http
   server: 91.92.250.33
   port: 443
@@ -1092,172 +1105,111 @@ proxies:
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-- name: 阿联酋-01-2.5MB/S
-  type: vless
-  server: 95.174.68.188
-  port: 14430
-  udp: true
-  uuid: 965ffbbe-c6b6-4d5f-8dea-6d8abc55d9c0
-  network: ws
-  ws-opts:
-    path: /vless
-    headers:
-      Host: 95.174.68.188
-  packet-encoding: xudp
-- name: 韩国-01-2.7MB/S
-  type: vmess
-  server: 217.142.138.61
-  port: 80
-  udp: true
-  uuid: ac1b933d-afff-4487-93ef-f57130a55dff
-  alterId: 0
-  cipher: auto
-  network: http
-  http-opts:
-    path:
-    - /
-- name: 马来西亚-01-1.4MB/S
-  type: vless
-  server: 166.88.35.242
-  port: 443
-  udp: true
-  uuid: 495c7195-85b8-498a-bf20-2ea9ce9175b5
-  tls: true
-  servername: snip.edgeoneai.cc.cd
-  alpn:
-  - h3
-  - h2
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    headers:
-      Host: snip.edgeoneai.cc.cd
-      User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36
-    path: /
-  encryption: none
-  packet-encoding: xudp
-  sub_tag: F003-260618
-  xudp: true
-- name: 黑山-01-0.0MB/S
-  type: vless
-  server: 31.57.190.89
-  port: 443
-  udp: true
-  uuid: d342d11e-d224-4463-b982-532309285094
-  tls: true
-  servername: ccc.010304.xyz
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /fp=chrome
-    headers:
-      Host: ccc.010304.xyz
-  packet-encoding: xudp
 proxy-groups:
 - name: 节点选择
   type: select
   proxies:
   - 自动选择
-  - 美国-01-9.3MB/S
-  - 美国-02-6.1MB/S
-  - 美国-03-5.8MB/S
-  - 美国-04-5.1MB/S
-  - 美国-05-4.9MB/S
-  - 美国-06-4.9MB/S
-  - 美国-07-4.9MB/S
-  - 美国-08-4.9MB/S
-  - 美国-09-4.9MB/S
-  - 美国-10-4.7MB/S
-  - 美国-11-4.4MB/S
-  - 美国-12-4.4MB/S
-  - 美国-13-4.3MB/S
-  - 美国-14-4.1MB/S
-  - 加拿大-01-5.9MB/S
-  - 加拿大-02-5.5MB/S
-  - 加拿大-03-5.3MB/S
-  - 加拿大-04-5.2MB/S
-  - 加拿大-05-4.8MB/S
-  - 加拿大-06-4.7MB/S
-  - 加拿大-07-4.7MB/S
-  - 加拿大-08-4.2MB/S
-  - 加拿大-09-4.1MB/S
-  - 加拿大-10-3.9MB/S
-  - 加拿大-11-3.5MB/S
-  - 加拿大-12-3.2MB/S
-  - 瑞士-01-3.5MB/S
-  - 瑞士-02-3.5MB/S
-  - 瑞士-03-3.2MB/S
-  - 荷兰-01-4.7MB/S
-  - 荷兰-02-4.7MB/S
-  - 荷兰-03-4.0MB/S
-  - 丹麦-01-3.7MB/S
-  - 丹麦-02-3.2MB/S
-  - 比利时-01-4.2MB/S
-  - 比利时-02-3.7MB/S
-  - 爱尔兰-01-3.7MB/S
-  - 爱尔兰-02-3.5MB/S
-  - 中国-01-0.0MB/S
-  - 中国台湾-01-2.9MB/S
-  - 中国香港-01-0.0MB/S
+  - 美国-01-7.9MB/S
+  - 美国-02-6.9MB/S
+  - 美国-03-6.8MB/S
+  - 美国-04-6.8MB/S
+  - 美国-05-6.7MB/S
+  - 美国-06-6.6MB/S
+  - 美国-07-6.6MB/S
+  - 美国-08-6.6MB/S
+  - 美国-09-6.5MB/S
+  - 美国-10-6.3MB/S
+  - 美国-11-6.3MB/S
+  - 美国-12-6.0MB/S
+  - 美国-13-6.0MB/S
+  - 美国-14-5.9MB/S
+  - 美国-15-5.9MB/S
+  - 美国-16-5.9MB/S
+  - 美国-17-5.9MB/S
+  - 美国-18-5.9MB/S
+  - 加拿大-01-7.3MB/S
+  - 加拿大-02-6.9MB/S
+  - 加拿大-03-6.0MB/S
+  - 中国台湾-01-2.7MB/S
+  - 中国台湾-02-1.7MB/S
+  - 中国香港-01-2.5MB/S
+  - 中国香港-02-2.4MB/S
   - 乌克兰-01-1.2MB/S
-  - 亚美尼亚-01-2.0MB/S
-  - 以色列-01-2.6MB/S
-  - 伊朗-01-0.0MB/S
-  - 伯利兹-01-0.0MB/S
-  - 俄罗斯-01-3.2MB/S
-  - 保加利亚-01-2.9MB/S
-  - 克罗地亚-01-2.7MB/S
-  - 冰岛-01-3.7MB/S
-  - 匈牙利-01-0.0MB/S
-  - 南非-01-3.9MB/S
-  - 卢森堡-01-3.7MB/S
-  - 印度-01-2.7MB/S
-  - 印度尼西亚-01-1.8MB/S
-  - 厄瓜多尔-01-0.0MB/S
-  - 哈萨克斯坦-01-1.4MB/S
-  - 哥斯达黎加-01-0.0MB/S
-  - 喀麦隆-01-0.1MB/S
-  - 土耳其-01-2.3MB/S
-  - 塞尔维亚-01-2.5MB/S
-  - 塞浦路斯-01-0.0MB/S
-  - 塞舌尔-01-0.0MB/S
-  - 墨西哥-01-0.0MB/S
-  - 奥地利-01-2.7MB/S
-  - 巴西-01-2.9MB/S
-  - 希腊-01-2.1MB/S
-  - 库拉索-01-0.0MB/S
-  - 德国-01-4.5MB/S
-  - 意大利-01-4.0MB/S
-  - 拉脱维亚-01-2.7MB/S
-  - 挪威-01-2.5MB/S
-  - 捷克-01-3.0MB/S
-  - 摩尔多瓦-01-0.0MB/S
-  - 新加坡-01-2.0MB/S
-  - 新西兰-01-0.0MB/S
-  - 日本-01-3.4MB/S
-  - 智利-01-0.0MB/S
-  - 格鲁吉亚-01-0.0MB/S
-  - 法国-01-2.2MB/S
+  - 乌克兰-02-1.0MB/S
+  - 俄罗斯-01-3.0MB/S
+  - 俄罗斯-02-2.0MB/S
+  - 保加利亚-01-2.2MB/S
+  - 保加利亚-02-2.2MB/S
+  - 南非-01-1.4MB/S
+  - 南非-02-1.2MB/S
+  - 印度-01-2.2MB/S
+  - 印度-02-2.1MB/S
+  - 印度尼西亚-01-1.9MB/S
+  - 印度尼西亚-02-1.5MB/S
+  - 土耳其-01-2.4MB/S
+  - 土耳其-02-2.4MB/S
+  - 德国-01-4.2MB/S
+  - 德国-02-4.0MB/S
+  - 意大利-01-3.1MB/S
+  - 意大利-02-2.9MB/S
+  - 拉脱维亚-01-2.9MB/S
+  - 拉脱维亚-02-2.3MB/S
+  - 挪威-01-0.8MB/S
+  - 挪威-02-0.0MB/S
+  - 捷克-01-2.2MB/S
+  - 捷克-02-1.9MB/S
+  - 斯里兰卡-01-2.7MB/S
+  - 斯里兰卡-02-2.4MB/S
+  - 新加坡-01-2.7MB/S
+  - 新加坡-02-2.7MB/S
+  - 日本-01-3.8MB/S
+  - 日本-02-3.8MB/S
+  - 法国-01-5.7MB/S
+  - 法国-02-5.5MB/S
   - 波兰-01-2.7MB/S
-  - 波黑-01-0.0MB/S
-  - 泰国-01-2.2MB/S
-  - 澳大利亚-01-3.4MB/S
-  - 爱沙尼亚-01-3.2MB/S
-  - 瑞典-01-2.7MB/S
-  - 白俄罗斯-01-0.0MB/S
-  - 秘鲁-01-0.0MB/S
-  - 立陶宛-01-2.3MB/S
-  - 罗马尼亚-01-0.0MB/S
-  - 芬兰-01-3.6MB/S
-  - 英国-01-2.7MB/S
-  - 英属维尔京群岛-01-0.0MB/S
-  - 葡萄牙-01-0.0MB/S
-  - 西班牙-01-3.5MB/S
-  - 阿尔巴尼亚-01-2.2MB/S
-  - 阿联酋-01-2.5MB/S
-  - 韩国-01-2.7MB/S
-  - 马来西亚-01-1.4MB/S
-  - 黑山-01-0.0MB/S
+  - 波兰-02-2.2MB/S
+  - 泰国-01-3.0MB/S
+  - 泰国-02-2.5MB/S
+  - 澳大利亚-01-2.7MB/S
+  - 澳大利亚-02-1.7MB/S
+  - 爱尔兰-01-2.3MB/S
+  - 爱尔兰-02-2.3MB/S
+  - 瑞典-01-2.4MB/S
+  - 瑞典-02-1.9MB/S
+  - 瑞士-01-2.9MB/S
+  - 瑞士-02-1.3MB/S
+  - 立陶宛-01-2.6MB/S
+  - 立陶宛-02-2.1MB/S
+  - 罗马尼亚-01-2.9MB/S
+  - 罗马尼亚-02-2.8MB/S
+  - 芬兰-01-3.7MB/S
+  - 芬兰-02-3.2MB/S
+  - 英国-01-4.1MB/S
+  - 英国-02-3.0MB/S
+  - 荷兰-01-5.9MB/S
+  - 荷兰-02-4.9MB/S
+  - 西班牙-01-3.2MB/S
+  - 西班牙-02-2.0MB/S
+  - 阿联酋-01-2.2MB/S
+  - 阿联酋-02-1.3MB/S
+  - 韩国-01-2.9MB/S
+  - 韩国-02-2.7MB/S
+  - 马来西亚-01-3.0MB/S
+  - 马来西亚-02-2.4MB/S
+  - 丹麦-01-2.0MB/S
+  - 亚美尼亚-01-1.5MB/S
+  - 以色列-01-2.9MB/S
+  - 伯利兹-01-2.2MB/S
+  - 哈萨克斯坦-01-1.3MB/S
+  - 墨西哥-01-2.9MB/S
+  - 奥地利-01-2.4MB/S
+  - 爱沙尼亚-01-0.5MB/S
+  - 秘鲁-01-3.0MB/S
+  - 英属维尔京群岛-01-3.9MB/S
+  - 葡萄牙-01-2.2MB/S
+  - 越南-01-0.9MB/S
+  - 阿尔巴尼亚-01-1.9MB/S
   - DIRECT
 - name: 自动选择
   type: url-test
@@ -1265,105 +1217,105 @@ proxy-groups:
   interval: 300
   tolerance: 50
   proxies:
-  - 美国-01-9.3MB/S
-  - 美国-02-6.1MB/S
-  - 美国-03-5.8MB/S
-  - 美国-04-5.1MB/S
-  - 美国-05-4.9MB/S
-  - 美国-06-4.9MB/S
-  - 美国-07-4.9MB/S
-  - 美国-08-4.9MB/S
-  - 美国-09-4.9MB/S
-  - 美国-10-4.7MB/S
-  - 美国-11-4.4MB/S
-  - 美国-12-4.4MB/S
-  - 美国-13-4.3MB/S
-  - 美国-14-4.1MB/S
-  - 加拿大-01-5.9MB/S
-  - 加拿大-02-5.5MB/S
-  - 加拿大-03-5.3MB/S
-  - 加拿大-04-5.2MB/S
-  - 加拿大-05-4.8MB/S
-  - 加拿大-06-4.7MB/S
-  - 加拿大-07-4.7MB/S
-  - 加拿大-08-4.2MB/S
-  - 加拿大-09-4.1MB/S
-  - 加拿大-10-3.9MB/S
-  - 加拿大-11-3.5MB/S
-  - 加拿大-12-3.2MB/S
-  - 瑞士-01-3.5MB/S
-  - 瑞士-02-3.5MB/S
-  - 瑞士-03-3.2MB/S
-  - 荷兰-01-4.7MB/S
-  - 荷兰-02-4.7MB/S
-  - 荷兰-03-4.0MB/S
-  - 丹麦-01-3.7MB/S
-  - 丹麦-02-3.2MB/S
-  - 比利时-01-4.2MB/S
-  - 比利时-02-3.7MB/S
-  - 爱尔兰-01-3.7MB/S
-  - 爱尔兰-02-3.5MB/S
-  - 中国-01-0.0MB/S
-  - 中国台湾-01-2.9MB/S
-  - 中国香港-01-0.0MB/S
+  - 美国-01-7.9MB/S
+  - 美国-02-6.9MB/S
+  - 美国-03-6.8MB/S
+  - 美国-04-6.8MB/S
+  - 美国-05-6.7MB/S
+  - 美国-06-6.6MB/S
+  - 美国-07-6.6MB/S
+  - 美国-08-6.6MB/S
+  - 美国-09-6.5MB/S
+  - 美国-10-6.3MB/S
+  - 美国-11-6.3MB/S
+  - 美国-12-6.0MB/S
+  - 美国-13-6.0MB/S
+  - 美国-14-5.9MB/S
+  - 美国-15-5.9MB/S
+  - 美国-16-5.9MB/S
+  - 美国-17-5.9MB/S
+  - 美国-18-5.9MB/S
+  - 加拿大-01-7.3MB/S
+  - 加拿大-02-6.9MB/S
+  - 加拿大-03-6.0MB/S
+  - 中国台湾-01-2.7MB/S
+  - 中国台湾-02-1.7MB/S
+  - 中国香港-01-2.5MB/S
+  - 中国香港-02-2.4MB/S
   - 乌克兰-01-1.2MB/S
-  - 亚美尼亚-01-2.0MB/S
-  - 以色列-01-2.6MB/S
-  - 伊朗-01-0.0MB/S
-  - 伯利兹-01-0.0MB/S
-  - 俄罗斯-01-3.2MB/S
-  - 保加利亚-01-2.9MB/S
-  - 克罗地亚-01-2.7MB/S
-  - 冰岛-01-3.7MB/S
-  - 匈牙利-01-0.0MB/S
-  - 南非-01-3.9MB/S
-  - 卢森堡-01-3.7MB/S
-  - 印度-01-2.7MB/S
-  - 印度尼西亚-01-1.8MB/S
-  - 厄瓜多尔-01-0.0MB/S
-  - 哈萨克斯坦-01-1.4MB/S
-  - 哥斯达黎加-01-0.0MB/S
-  - 喀麦隆-01-0.1MB/S
-  - 土耳其-01-2.3MB/S
-  - 塞尔维亚-01-2.5MB/S
-  - 塞浦路斯-01-0.0MB/S
-  - 塞舌尔-01-0.0MB/S
-  - 墨西哥-01-0.0MB/S
-  - 奥地利-01-2.7MB/S
-  - 巴西-01-2.9MB/S
-  - 希腊-01-2.1MB/S
-  - 库拉索-01-0.0MB/S
-  - 德国-01-4.5MB/S
-  - 意大利-01-4.0MB/S
-  - 拉脱维亚-01-2.7MB/S
-  - 挪威-01-2.5MB/S
-  - 捷克-01-3.0MB/S
-  - 摩尔多瓦-01-0.0MB/S
-  - 新加坡-01-2.0MB/S
-  - 新西兰-01-0.0MB/S
-  - 日本-01-3.4MB/S
-  - 智利-01-0.0MB/S
-  - 格鲁吉亚-01-0.0MB/S
-  - 法国-01-2.2MB/S
+  - 乌克兰-02-1.0MB/S
+  - 俄罗斯-01-3.0MB/S
+  - 俄罗斯-02-2.0MB/S
+  - 保加利亚-01-2.2MB/S
+  - 保加利亚-02-2.2MB/S
+  - 南非-01-1.4MB/S
+  - 南非-02-1.2MB/S
+  - 印度-01-2.2MB/S
+  - 印度-02-2.1MB/S
+  - 印度尼西亚-01-1.9MB/S
+  - 印度尼西亚-02-1.5MB/S
+  - 土耳其-01-2.4MB/S
+  - 土耳其-02-2.4MB/S
+  - 德国-01-4.2MB/S
+  - 德国-02-4.0MB/S
+  - 意大利-01-3.1MB/S
+  - 意大利-02-2.9MB/S
+  - 拉脱维亚-01-2.9MB/S
+  - 拉脱维亚-02-2.3MB/S
+  - 挪威-01-0.8MB/S
+  - 挪威-02-0.0MB/S
+  - 捷克-01-2.2MB/S
+  - 捷克-02-1.9MB/S
+  - 斯里兰卡-01-2.7MB/S
+  - 斯里兰卡-02-2.4MB/S
+  - 新加坡-01-2.7MB/S
+  - 新加坡-02-2.7MB/S
+  - 日本-01-3.8MB/S
+  - 日本-02-3.8MB/S
+  - 法国-01-5.7MB/S
+  - 法国-02-5.5MB/S
   - 波兰-01-2.7MB/S
-  - 波黑-01-0.0MB/S
-  - 泰国-01-2.2MB/S
-  - 澳大利亚-01-3.4MB/S
-  - 爱沙尼亚-01-3.2MB/S
-  - 瑞典-01-2.7MB/S
-  - 白俄罗斯-01-0.0MB/S
-  - 秘鲁-01-0.0MB/S
-  - 立陶宛-01-2.3MB/S
-  - 罗马尼亚-01-0.0MB/S
-  - 芬兰-01-3.6MB/S
-  - 英国-01-2.7MB/S
-  - 英属维尔京群岛-01-0.0MB/S
-  - 葡萄牙-01-0.0MB/S
-  - 西班牙-01-3.5MB/S
-  - 阿尔巴尼亚-01-2.2MB/S
-  - 阿联酋-01-2.5MB/S
-  - 韩国-01-2.7MB/S
-  - 马来西亚-01-1.4MB/S
-  - 黑山-01-0.0MB/S
+  - 波兰-02-2.2MB/S
+  - 泰国-01-3.0MB/S
+  - 泰国-02-2.5MB/S
+  - 澳大利亚-01-2.7MB/S
+  - 澳大利亚-02-1.7MB/S
+  - 爱尔兰-01-2.3MB/S
+  - 爱尔兰-02-2.3MB/S
+  - 瑞典-01-2.4MB/S
+  - 瑞典-02-1.9MB/S
+  - 瑞士-01-2.9MB/S
+  - 瑞士-02-1.3MB/S
+  - 立陶宛-01-2.6MB/S
+  - 立陶宛-02-2.1MB/S
+  - 罗马尼亚-01-2.9MB/S
+  - 罗马尼亚-02-2.8MB/S
+  - 芬兰-01-3.7MB/S
+  - 芬兰-02-3.2MB/S
+  - 英国-01-4.1MB/S
+  - 英国-02-3.0MB/S
+  - 荷兰-01-5.9MB/S
+  - 荷兰-02-4.9MB/S
+  - 西班牙-01-3.2MB/S
+  - 西班牙-02-2.0MB/S
+  - 阿联酋-01-2.2MB/S
+  - 阿联酋-02-1.3MB/S
+  - 韩国-01-2.9MB/S
+  - 韩国-02-2.7MB/S
+  - 马来西亚-01-3.0MB/S
+  - 马来西亚-02-2.4MB/S
+  - 丹麦-01-2.0MB/S
+  - 亚美尼亚-01-1.5MB/S
+  - 以色列-01-2.9MB/S
+  - 伯利兹-01-2.2MB/S
+  - 哈萨克斯坦-01-1.3MB/S
+  - 墨西哥-01-2.9MB/S
+  - 奥地利-01-2.4MB/S
+  - 爱沙尼亚-01-0.5MB/S
+  - 秘鲁-01-3.0MB/S
+  - 英属维尔京群岛-01-3.9MB/S
+  - 葡萄牙-01-2.2MB/S
+  - 越南-01-0.9MB/S
+  - 阿尔巴尼亚-01-1.9MB/S
 rules:
 - MATCH,节点选择
