@@ -103,6 +103,7 @@ def build(
     refine_workers: int = 16,
     ip_timeout: float = 6.0,
     max_nodes: int = 80,
+    country_share: float = 0.2,
     top_per_country: int = 0,
     no_speedtest: bool = False,
     vantage: str = "",
@@ -262,9 +263,16 @@ def build(
 
     code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
     if max_nodes > 0:
+        # 单国上限：名额越少、国家越多，配额就越接近 1，越多名额落到「纯速度」上，
+        # 而测速机在美国 —— 取 80 个时美国曾占到 30/80 = 37.5%。
+        cap = max(1, round(max_nodes * country_share)) if country_share > 0 else 0
         candidates = _stratified(
-            candidates, max_nodes, code_of, key=lambda p: -_speed_of(p, probes)
+            candidates, max_nodes, code_of, key=lambda p: -_speed_of(p, probes),
+            cap_per_country=cap, log=log,
         )
+        if cap:
+            log(f"  单国上限 {cap} 个（{country_share:.0%} × {max_nodes}），"
+                f"超额部分让给别的国家")
 
     grouped: dict[str, list[dict]] = defaultdict(list)
     for proxy in candidates:
@@ -380,11 +388,18 @@ def _rank(candidates: list[dict], probes: dict[str, dict]) -> list[dict]:
     return with_speed + without
 
 
-def _stratified(items: list[dict], limit: int, code_of: dict[str, str], *, key) -> list[dict]:
+def _stratified(items: list[dict], limit: int, code_of: dict[str, str], *, key,
+                cap_per_country: int = 0, log=print) -> list[dict]:
     """按国家分层截断：每个国家先分一份配额，再用剩下的名额按 key 补齐。
 
     目的：避免"延迟最低的前 N 个"被 runner 所在地区整体占满。
     每个国家至少能分到 max(1, limit // 国家数) 个名额。
+
+    `cap_per_country` 是「单个国家最多占几个」的上限，0 表示不限。它补的是配额算法
+    在**名额少、国家多**时的漏洞：配额是 `floor(limit / 国家数)`，国家数 47 时
+    取 100 个配额是 2（保底用掉 94，只剩 6 个按速度补），取 80 个配额就掉到 1
+    （保底只用掉 47，剩 33 个全按速度补）—— 而测速机在美国，于是美国占 30/80 = 37.5%。
+    加了上限之后，超出的部分会被跳过、让给别的国家，但**总数仍然补到 limit**。
     """
     if limit <= 0 or len(items) <= limit:
         return items
@@ -393,15 +408,32 @@ def _stratified(items: list[dict], limit: int, code_of: dict[str, str], *, key) 
         buckets[code_of.get(item["name"], "??")].append(item)
 
     quota = max(1, limit // len(buckets))
+    if cap_per_country > 0:
+        quota = min(quota, cap_per_country)
+
     picked: list[dict] = []
     rest: list[dict] = []
+    taken: dict[str, int] = defaultdict(int)
     for code in sorted(buckets, key=lambda c: (-len(buckets[c]), c)):
         bucket = buckets[code]
-        picked.extend(bucket[:quota])
+        head = bucket[:quota]
+        picked.extend(head)
+        taken[code] = len(head)
         rest.extend(bucket[quota:])
+
     if len(picked) < limit:
         rest.sort(key=key)
-        picked.extend(rest[:limit - len(picked)])
+        for item in rest:
+            if len(picked) >= limit:
+                break
+            code = code_of.get(item["name"], "??")
+            if cap_per_country > 0 and taken[code] >= cap_per_country:
+                continue
+            picked.append(item)
+            taken[code] += 1
+        if len(picked) < limit:
+            log(f"  [warn] 单国上限 {cap_per_country} 卡住了，只凑到 {len(picked)}/{limit} 个"
+                f"（候选里没有更多国家可补）")
     return sorted(picked, key=key)
 
 
