@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -270,6 +271,41 @@ def test_probe_budget(problems: list[str]) -> None:
         problems.append("SOURCE_MIN_MBS 必须为正")
 
 
+def test_exit_ip_total_budget(problems: list[str]) -> None:
+    """`exit_ip(timeout)` 是**整段预算**，不是每个地址各给一份。
+
+    这条是并发被压到 1 之后才变致命的：四个地址各 6 秒 = 单节点 24 秒，
+    而初筛只有 1 个 worker ⇒ 350 个节点串行 = 两个多小时。
+    出口 IP 只是一行小响应，值得花的时间上限就是它自己。
+    """
+    mh = Mihomo(Path("mihomo"), Path("."), log=QUIET)
+    timeouts: list[float] = []
+
+    class TimeoutOpener:
+        """模拟「一直读到超时」：按传入的 timeout 睡一会儿再失败。"""
+
+        def open(self, req, timeout=None):
+            timeouts.append(timeout)
+            time.sleep(0.35)
+            raise OSError("timed out")
+
+    budget = 1.0
+    started = time.monotonic()
+    with patch.object(Mihomo, "_opener", staticmethod(lambda port: TimeoutOpener())):
+        got = mh.exit_ip(20000, timeout=budget)
+    elapsed = time.monotonic() - started
+
+    if got is not None:
+        problems.append(f"全部地址都失败时应返回 None，实际 {got!r}")
+    if elapsed > budget * 1.3:
+        problems.append(f"exit_ip 花了 {elapsed:.2f}s，预算是 {budget:.1f}s —— "
+                        f"说明每个地址各领了一份预算（4 × {budget:.0f}s = 串行放大 4 倍）")
+    if len(timeouts) > 3:
+        problems.append(f"预算 {budget:.1f}s 内试了 {len(timeouts)} 个地址，应提前收手")
+    if any(t <= 0 for t in timeouts if t is not None):
+        problems.append(f"传给 open 的超时里有非正数：{timeouts}")
+
+
 def main() -> int:
     problems: list[str] = []
     test_fit_narrow(problems)
@@ -284,6 +320,7 @@ def main() -> int:
     test_aggregate_arithmetic(problems)
     test_speed_ex_unchanged(problems)
     test_selfcheck_before_screen(problems)
+    test_exit_ip_total_budget(problems)
     test_probe_budget(problems)
     if problems:
         print(f"✗ {len(problems)} 处失败")

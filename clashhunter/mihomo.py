@@ -463,11 +463,20 @@ class Mihomo:
         # 多备几个：CNB 的 runner 上 `api.ipify.org` 直接 Connection refused
         # （实测 2026-10-24），只留 ipify + icanhazip 时出口 IP 会 100% 探测失败，
         # 于是所有节点的国家都退回「按服务端 IP 猜」。
+        #
+        # ⚠️ `timeout` 是**整段预算**，不是每个地址各给一份。四个地址各给 6 秒
+        # 就是单节点 24 秒；而初筛并发会被管道压到 1（见 builder._fit_to_pipe），
+        # 于是这 24 秒是**串行**的 —— 350 个节点就是两个多小时。
+        # 出口 IP 只是一行小响应，值得花的时间上限就是它自己。
+        deadline = time.monotonic() + timeout
         for url in ("http://api.ipify.org", "http://icanhazip.com",
                     "http://ip-api.com/line/?fields=query", "http://ifconfig.me/ip"):
+            remain = deadline - time.monotonic()
+            if remain <= 0.5:
+                break
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": UA})
-                with self._opener(port).open(req, timeout=timeout) as resp:
+                with self._opener(port).open(req, timeout=remain) as resp:
                     text = resp.read(200).decode("utf-8", "replace").strip()
                 if _plausible_exit_ip(text):
                     return text
