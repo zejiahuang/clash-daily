@@ -56,7 +56,7 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="复测并发（故意低于初筛，减少抢带宽造成的低估）")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
 
-    parser.add_argument("--max-nodes", type=int, default=100, help="最终最多保留多少个节点")
+    parser.add_argument("--max-nodes", type=int, default=80, help="最终最多保留多少个节点")
     parser.add_argument("--vantage", default="",
                         help="测速机位置，写进订阅文件头部（留空则尝试从 <out>/runner-geo.json 读）")
     parser.add_argument("--top-per-country", type=int, default=0,
