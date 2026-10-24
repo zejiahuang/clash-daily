@@ -45,7 +45,11 @@ API_PORT = 9090
 MIXED_PORT = 7891
 GROUP = "PROBE"
 TEST_URL = "http://www.gstatic.com/generate_204"
-SPEED_URL = "https://speed.cloudflare.com/__down?bytes=2000000"
+# ⚠️ 这里的字节数是**模板占位符**，由 measure_speed() 用 max_bytes 填。
+# 曾经写成固定的 `?bytes=2000000`，结果把 --speed-bytes 改成 6 MB 之后
+# 服务端仍然只发 2 MB 就 EOF，total 永远到不了 6 MB —— 改动静默失效，
+# 产物里 5 个节点照样卡在 38.15 的封顶值上。URL 与 max_bytes 必须同源。
+SPEED_URL = "https://speed.cloudflare.com/__down?bytes={bytes}"
 LISTENER_BASE_PORT = 20000
 
 
@@ -404,9 +408,13 @@ class Mihomo:
         2 MB 的下载在 10 MB/s 上只要 0.2 s，握手 0.15 s 就能把 10 报成 5.7；
         而 1 MB/s 的节点只是从 1.0 变成 0.93。这会系统性地把排名压平。
 
-        分母下限取 0.05 s：极快的节点可能在两三个 chunk 内就把 2 MB 收完，
+        分母下限取 0.05 s：极快的节点可能在两三个 chunk 内就把数据收完，
         真实跨度只有几毫秒，不设下限会除出几十上百 MB/s 的假数字。
         """
+        # URL 里的 {bytes} 必须跟着 max_bytes 走，否则「下够多少」和「服务器发多少」
+        # 会对不上：服务器先 EOF，循环提前结束，改 max_bytes 等于没改。
+        if "{bytes}" in url:
+            url = url.replace("{bytes}", str(max_bytes))
         req = urllib.request.Request(
             url, headers={"User-Agent": UA, "Accept": "*/*", "Connection": "close"}
         )
