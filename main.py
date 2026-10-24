@@ -43,7 +43,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--delay-workers", type=int, default=32, help="延迟测速并发")
 
     parser.add_argument("--speed-url", default=SPEED_URL, help="下载测速用的 URL")
-    parser.add_argument("--speed-bytes", type=int, default=2_000_000,
+    parser.add_argument("--speed-bytes", type=int, default=6_000_000,
                         help="每个节点最多下载多少字节用于测速")
     parser.add_argument("--speed-timeout", type=float, default=10.0, help="单节点下载测速超时(秒)")
     parser.add_argument("--speed-workers", type=int, default=32,
