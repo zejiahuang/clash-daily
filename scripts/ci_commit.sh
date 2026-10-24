@@ -4,8 +4,14 @@
 # 用法：bash scripts/ci_commit.sh "提交说明"
 #
 # ⚠️ 防自触发：本机器人写的产物提交会**再触发一次 push 构建**。第二次构建里
-#    「上一提交的作者」就是 cnb-bot，于是在这里直接退出 —— 没有新提交，也就
-#    不会再触发第三次。**不要删这个判断**，删了就是无限循环。
+#    「上一提交就是产物提交」，于是在这里直接退出 —— 没有新提交，也就不会再
+#    触发第三次。**不要删这个判断**，删了就是无限循环。
+#
+# ⚠️ 判据必须**同时**满足两条：① 作者是 cnb-bot；② 改动全部落在 dist/ 里。
+#    只看作者会误伤，而且是**静默**误伤：谁用 cnb-bot 的邮箱提交代码（本地手工也
+#    算），这条判断就把产物提交跳过，而阶段照样显示成功、日志只多一行「跳过」。
+#    2026-10-24 就这么踩了一次 —— 推上去之后 `dist/probe.json` 一直停在旧时间戳，
+#    从外部看是「构建成功但没有新产物」，查了半小时才想到是作者邮箱。
 set -euo pipefail
 
 MSG="${1:-}"
@@ -14,9 +20,16 @@ if [ -z "$MSG" ]; then
   exit 2
 fi
 
-if [ "$(git log -1 --format=%ae)" = "cnb-bot@cnb.cool" ]; then
-  echo "上一提交就是产物提交（cnb-bot），跳过（防自触发）"
-  exit 0
+BOT_MAIL="cnb-bot@cnb.cool"
+if [ "$(git log -1 --format=%ae)" = "$BOT_MAIL" ]; then
+  # 非 dist/ 的改动行（空行剔掉）；为空 ⇒ 上一提交只动了产物
+  changed="$(git show --pretty=format: --name-only HEAD | grep -v '^dist/' | grep -v '^$' || true)"
+  if [ -z "$changed" ]; then
+    echo "上一提交是产物提交（cnb-bot 且只改 dist/），跳过（防自触发）"
+    exit 0
+  fi
+  echo "⚠️ 上一提交作者是 cnb-bot，但改了非 dist/ 的文件 —— 这不是产物提交，继续"
+  echo "$changed" | sed 's/^/     /'
 fi
 
 git config user.name  "cnb-bot"
