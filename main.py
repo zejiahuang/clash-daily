@@ -55,11 +55,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--refine-workers", type=int, default=16,
                         help="复测并发（故意低于初筛，减少抢带宽造成的低估）")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
-    parser.add_argument("--apac-check-top", type=int, default=40,
-                        help="经一台亚太节点当跳板复测最快的多少个（0=不做交叉验证）。"
-                             "直连测速是「测速机→节点」，使用者走的是「国内→节点」，"
-                             "这一步用来找出「美西快、亚太慢」的节点；"
-                             "跳板自身速度是天花板，所以只报告不剔除")
+    parser.add_argument("--apac-check-top", type=int, default=0,
+                        help="经一台亚太节点当跳板复测最快的多少个（0=不做交叉验证，默认关闭）。"
+                             "两轮实测都没拿到可信数据：跳板质量不够，"
+                             "40 个样本里 27 个经跳板完全测不出。想再试给 40")
     parser.add_argument("--apac-check-workers", type=int, default=1,
                         help="亚太复测并发。必须压到 1：跳板上行带宽是共享的，"
                              "并发 4 会把所有节点一起压平（实测比值中位数掉到 0.09）")
