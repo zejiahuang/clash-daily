@@ -76,13 +76,12 @@ jobs:
           python3 -m pip install --upgrade pip -q || true
           python3 -m pip install -r requirements.txt -q
 
-      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 亚太复测 / 可达性 / 分层取样 / 源站适配器）
+      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 亚太复测 / 分层取样 / 源站适配器）
         run: |
           python3 tests/test_parsers.py
           python3 tests/test_bisect.py
           python3 tests/test_speed_math.py
           python3 tests/test_apac.py
-          python3 tests/test_reach.py
           python3 tests/test_selection.py
           python3 tests/test_sources.py
 

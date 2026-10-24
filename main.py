@@ -41,10 +41,6 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--delay-url", default=TEST_URL, help="延迟测速的探测 URL")
     parser.add_argument("--delay-timeout", type=int, default=5000, help="单节点延迟测速超时(毫秒)")
     parser.add_argument("--delay-workers", type=int, default=32, help="延迟测速并发")
-    parser.add_argument("--reach-check", action="store_true",
-                        help="开启多目标可达性诊断（Google/Cloudflare/微软/Apple），"
-                             "约多花 1 分钟，只报告分布不筛选。默认关闭：实测 77%% 的"
-                             "节点四个目标全通，区分度太低")
 
     parser.add_argument("--speed-url", default=SPEED_URL, help="下载测速用的 URL")
     parser.add_argument("--speed-bytes", type=int, default=6_000_000,
@@ -124,7 +120,6 @@ def main(argv=None) -> int:
             delay_url=args.delay_url,
             delay_timeout_ms=args.delay_timeout,
             delay_workers=args.delay_workers,
-            reach_check=args.reach_check,
             speed_url=args.speed_url,
             speed_bytes=args.speed_bytes,
             speed_timeout=args.speed_timeout,

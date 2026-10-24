@@ -75,21 +75,10 @@ SPEED_SOURCES = (
     ("thinkbb", "https://download.thinkbroadband.com/100MB.zip"),
 )
 
-# 多目标可达性探测。主延迟只用 TEST_URL（Google）一个目标，而「能通 Google」
-# 不等于「能通别的站」—— 有些免费节点专门针对 Google 优化过。
-# 这几个都是标准的 captive-portal 检测端点，全球可用、返回体极小。
-#
 # ⚠️ 为什么不拿 speedtest.net 的服务器当测速目标：实测从 CI 测它的日本服务器只有
 # 1.07 MB/s，而 Cloudflare 是 7.0 MB/s。差的那 6 倍是测速服务器自己的带宽上限，
 # 不是节点的问题 —— 拿它当目标会系统性低估所有节点。所以测速源只从 SPEED_SOURCES
 # 里挑，且每个源都必须先通过直连容量自检。
-REACH_TARGETS = (
-    ("google", "http://www.gstatic.com/generate_204"),
-    ("cloudflare", "http://cp.cloudflare.com/generate_204"),
-    ("microsoft", "http://www.msftconnecttest.com/connecttest.txt"),
-    ("apple", "http://captive.apple.com/hotspot-detect.html"),
-)
-
 
 def _direct_opener():
     """不走任何代理的 opener。
