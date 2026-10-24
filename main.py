@@ -22,7 +22,7 @@ from clashhunter.mihomo import SPEED_URL, TEST_URL
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="每日免费节点聚合：抓取最新订阅、测速、按出口国家重命名、生成 Clash 配置",
+        description="每日节点聚合工具：抓取公开节点源、测速、按出口地区重命名、生成配置文件",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--out", default="dist", help="输出目录")
