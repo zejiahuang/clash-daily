@@ -102,7 +102,7 @@ def build(
     refine_top: int = 300,
     refine_workers: int = 16,
     ip_timeout: float = 6.0,
-    max_nodes: int = 100,
+    max_nodes: int = 80,
     top_per_country: int = 0,
     no_speedtest: bool = False,
     vantage: str = "",
@@ -477,7 +477,7 @@ def _header(result: BuildResult) -> str:
         f"# 生成时间：{result.generated_at}",
         f"# 节点数量：{result.stats.accepted}",
         f"# 覆盖地区：{'、'.join(f'{k}×{v}' for k, v in result.countries.items())}",
-        "# 节点名格式：国家-序号-实测峰值速度（MB/S）",
+        "# 节点名格式：国家-序号-实测平均速度（MB/S）",
     ]
     # 速度是「测速机 → 节点」的单点实测值，换一台机器测就是另一个数。
     # 不写清测速机在哪，使用者会把它当成自己那边的速度。
@@ -585,7 +585,7 @@ def _render_markdown(result: BuildResult) -> str:
         "",
         "## 地区分布",
         "",
-        "| 地区 | 节点数 | 峰值速度 |",
+        "| 地区 | 节点数 | 平均速度 |",
         "| --- | ---: | ---: |",
     ]
     best: dict[str, float] = {}
@@ -601,7 +601,7 @@ def _render_markdown(result: BuildResult) -> str:
         "",
         "## 速度最快的 15 个节点",
         "",
-        "| 名称 | 类型 | 峰值速度 | 延迟 | 出口 IP |",
+        "| 名称 | 类型 | 平均速度 | 延迟 | 出口 IP |",
         "| --- | --- | ---: | ---: | --- |",
     ]
     ranked = sorted(result.records, key=lambda r: -r["speed_mbps"])[:15]
