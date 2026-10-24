@@ -28,7 +28,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--out", default="dist", help="输出目录")
     parser.add_argument("--work", default="work", help="临时工作目录（放内核和中间配置）")
     parser.add_argument("--sources", default="",
-                        help="只跑指定源站，逗号分隔：manifest,clash-node,v2rayfree,stelliberty")
+                        help="只跑指定源站，逗号分隔：manifest,clash-node,v2rayfree,stelliberty,"
+                             "lancex,nodetoolbox,clashsuburl,zhuhaiuk,tg-nav,freeclashverge")
     parser.add_argument("--max-articles", type=int, default=3,
                         help="每个索引站最多回看几篇文章（当天文章没抓到就往前翻）")
 
@@ -49,7 +50,7 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="最多对多少个节点做下载测速（按延迟从快到慢取）")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
 
-    parser.add_argument("--max-nodes", type=int, default=300, help="最终最多保留多少个节点")
+    parser.add_argument("--max-nodes", type=int, default=100, help="最终最多保留多少个节点")
     parser.add_argument("--top-per-country", type=int, default=0,
                         help="每个国家最多保留几个（0 表示不限制）")
     parser.add_argument("--no-speedtest", action="store_true",
