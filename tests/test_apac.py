@@ -40,7 +40,8 @@ def test_hop_wiring(problems: list[str]) -> None:
         seen["proxies"] = proxies
         seen["ports"] = listener_ports
 
-    def fake_probe_one(self, port, *, speed_url, speed_bytes, speed_timeout, ip_timeout):
+    def fake_probe_one(self, port, *, speed_url, speed_bytes, speed_timeout,
+                       ip_timeout, sources=None):
         return {"speed": 1.0, "exit_ip": None}
 
     with patch.object(Mihomo, "start", fake_start), \

@@ -30,6 +30,14 @@ on:
         description: "复测每个节点下载字节数（必须大于 speed_bytes，否则快节点被 0.05 秒地板截断）"
         required: false
         default: "24000000"
+      speed_sources:
+        description: "复测对几个测速源各测一遍取中位数（0=单源）。具体用哪几个由运行时自检决定"
+        required: false
+        default: "3"
+      source_min_ratio:
+        description: "测速源直连速度低于最快那个的多少倍就不采用"
+        required: false
+        default: "0.4"
       apac_check_top:
         description: "经亚太节点当跳板复测最快的多少个（0=关闭，默认；想试给 40）"
         required: false
@@ -117,6 +125,8 @@ jobs:
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
           REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
           REFINE_BYTES: ${{ inputs.refine_bytes || '24000000' }}
+          SPEED_SOURCES: ${{ inputs.speed_sources || '3' }}
+          SOURCE_MIN_RATIO: ${{ inputs.source_min_ratio || '0.4' }}
           APAC_CHECK_TOP: ${{ inputs.apac_check_top || '0' }}
           APAC_CHECK_WORKERS: ${{ inputs.apac_check_workers || '1' }}
           APAC_MIN_HOP: ${{ inputs.apac_min_hop || '8' }}
@@ -135,6 +145,8 @@ jobs:
             --refine-top "$REFINE_TOP" \
             --refine-workers "$REFINE_WORKERS" \
             --refine-bytes "$REFINE_BYTES" \
+            --speed-sources "$SPEED_SOURCES" \
+            --source-min-ratio "$SOURCE_MIN_RATIO" \
             --apac-check-top "$APAC_CHECK_TOP" \
             --apac-check-workers "$APAC_CHECK_WORKERS" \
             --apac-min-hop "$APAC_MIN_HOP" \

@@ -18,12 +18,17 @@ from __future__ import annotations
 
 import ast
 import inspect
+import os
 import sys
+import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from clashhunter.builder import _refine_speed, build  # noqa: E402
+from clashhunter import mihomo as mihomo_mod  # noqa: E402
+from clashhunter.builder import _pick_sources, _refine_speed, build  # noqa: E402
+from clashhunter.mihomo import Mihomo, _median  # noqa: E402
 
 QUIET = lambda *a, **k: None  # noqa: E731
 ROOT = Path(__file__).resolve().parent.parent
@@ -154,6 +159,161 @@ def test_floor_arithmetic(problems: list[str]) -> None:
                         f"{REFINE_BYTES / SCREEN_BYTES:.2f}")
 
 
+class FakeSources:
+    """只提供 measure_sources 的假内核。"""
+
+    def __init__(self, rows: list[dict], record: list[int]):
+        self._rows = rows
+        self._record = record
+
+    def measure_sources(self, *, max_bytes, timeout, log=None):
+        self._record.append(max_bytes)
+        return sorted(self._rows, key=lambda r: -r["speed"])
+
+
+def test_median(problems: list[str]) -> None:
+    """中位数的三种情形。偶数个时取中间两个的平均。"""
+    cases = [
+        ([], 0.0, "空"),
+        ([7.0], 7.0, "单值"),
+        ([1.0, 9.0, 5.0], 5.0, "奇数取中间"),
+        ([1.0, 3.0], 2.0, "偶数取均值"),
+        ([1.0, 2.0, 3.0, 100.0], 2.5, "被离群值拽不动"),
+    ]
+    for values, want, note in cases:
+        got = _median(values)
+        if abs(got - want) > 1e-9:
+            problems.append(f"中位数 {note}：{values} → {got}，应为 {want}")
+
+
+def test_pick_sources(problems: list[str]) -> None:
+    """源自检的四条分支：按比例剔除 / 全低时留最快 / 全灭 / want=0。"""
+    rows = [
+        {"label": "cf", "url": "u-cf", "speed": 90.0},
+        {"label": "ovh", "url": "u-ovh", "speed": 40.0},
+        {"label": "slow", "url": "u-slow", "speed": 15.0},
+        {"label": "dead", "url": "u-dead", "speed": 0.0},
+    ]
+    rec: list[int] = []
+    got = _pick_sources(FakeSources(rows, rec), nbytes=REFINE_BYTES,
+                        timeout=10.0, want=3, min_ratio=0.4, log=QUIET)
+    # 门槛 = max(20, 90*0.4=36) ⇒ cf(90) 与 ovh(40) 过，slow(15) 与 dead(0) 不过
+    if [label for label, _ in got] != ["cf", "ovh"]:
+        problems.append(f"源自检结果 {[l for l, _ in got]}，应为 ['cf', 'ovh']"
+                        f"（门槛 max(20, 90×0.4=36)，15 和 0 都该被剔除）")
+    if rec and rec[0] != REFINE_BYTES:
+        problems.append(f"自检用的下载量是 {rec[0]}，应等于复测量 {REFINE_BYTES}"
+                        "（用地板算上限，字节数不同结论就不同）")
+
+    # want 限制数量
+    got2 = _pick_sources(FakeSources(rows, []), nbytes=REFINE_BYTES,
+                         timeout=10.0, want=1, min_ratio=0.4, log=QUIET)
+    if [label for label, _ in got2] != ["cf"]:
+        problems.append(f"want=1 时应只留最快的 cf，实际 {[l for l, _ in got2]}")
+
+    # 全部低于门槛 ⇒ 至少留最快的那个，不能返回空
+    low = [{"label": "a", "url": "ua", "speed": 12.0},
+           {"label": "b", "url": "ub", "speed": 9.0}]
+    got3 = _pick_sources(FakeSources(low, []), nbytes=REFINE_BYTES,
+                         timeout=10.0, want=3, min_ratio=0.4, log=QUIET)
+    if [label for label, _ in got3] != ["a"]:
+        problems.append(f"所有源都低于门槛时应留最快的 a，实际 "
+                        f"{[l for l, _ in got3]}（返回空会退回单源，反而更差）")
+
+    # 全部不可用 ⇒ 空列表，退回单一 speed_url
+    dead = [{"label": "x", "url": "ux", "speed": 0.0}]
+    if _pick_sources(FakeSources(dead, []), nbytes=REFINE_BYTES,
+                     timeout=10.0, want=3, min_ratio=0.4, log=QUIET):
+        problems.append("全部源不可用时应返回空列表（退回单源）")
+
+    # want=0 ⇒ 不发起自检
+    rec2: list[int] = []
+    if _pick_sources(FakeSources(rows, rec2), nbytes=REFINE_BYTES,
+                     timeout=10.0, want=0, min_ratio=0.4, log=QUIET):
+        problems.append("want=0 时应返回空列表")
+    if rec2:
+        problems.append("want=0 时不应发起源自检（白花流量）")
+
+
+def test_refine_passes_sources(problems: list[str]) -> None:
+    """多源必须真的传到 probe_all，否则「多个网站各自说话」是假的。"""
+    nodes = [node("A")]
+    probes = {"A": {"speed": 10.0}}
+    record: list[dict] = []
+    mh = FakeMihomo({"A": 20.0}, record)
+    picked = [("cf", "u-cf"), ("ovh", "u-ovh")]
+
+    _refine_speed(
+        mh, nodes, probes,
+        top=300, workers=16, speed_url="http://example/x",
+        speed_bytes=REFINE_BYTES, speed_timeout=10.0, ip_timeout=6.0,
+        screen_bytes=SCREEN_BYTES, sources=picked, log=QUIET,
+    )
+
+    got = record[0].get("sources") if record else None
+    if got != picked:
+        problems.append(f"复测传给 probe_all 的 sources 是 {got!r}，应为 {picked!r}"
+                        "（没传下去就还是单源，中位数无从谈起）")
+
+
+class FakeResp:
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = list(chunks)
+
+    def read(self, _n: int) -> bytes:
+        return self._chunks.pop(0) if self._chunks else b""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+class FakeOpener:
+    def __init__(self, resp, tag: str, used: dict):
+        self._resp, self._tag, self._used = resp, tag, used
+
+    def open(self, _req, timeout=None):
+        self._used["tag"] = self._tag
+        return self._resp
+
+
+def test_direct_measure(problems: list[str]) -> None:
+    """port=None 必须走直连 opener —— 否则「源自检」量到的是代理后的速度。"""
+    used: dict = {}
+    mh = Mihomo(Path("mihomo"), Path("."), log=QUIET)
+
+    def resp():
+        return FakeResp([b"x" * 65536] * 4 + [b""])
+
+    with patch.object(Mihomo, "_opener",
+                      lambda _self, _port: FakeOpener(resp(), "proxy", used)), \
+         patch.object(mihomo_mod, "_direct_opener",
+                      lambda: FakeOpener(resp(), "direct", used)):
+        mh.measure_speed(None, "http://example/x", 200_000, 5.0)
+        if used.get("tag") != "direct":
+            problems.append(f"port=None 时用的是 {used.get('tag')} opener，应为 direct")
+        mh.measure_speed(20000, "http://example/x", 200_000, 5.0)
+        if used.get("tag") != "proxy":
+            problems.append(f"给了 port 时用的是 {used.get('tag')} opener，应为 proxy")
+
+    # 直连 opener 必须显式清空代理，否则会继承 HTTP_PROXY 环境变量。
+    # ⚠️ 判据不能用「handlers 里有没有 ProxyHandler」：代理表为空时 ProxyHandler
+    # 注册不到任何方法，OpenerDirector.add_handler 不会把它放进 handlers。
+    # 真正的判据是「设了 HTTP_PROXY 之后，它还会不会拿这个代理去发请求」。
+    with patch.dict(os.environ, {"HTTP_PROXY": "http://127.0.0.1:9",
+                                 "HTTPS_PROXY": "http://127.0.0.1:9",
+                                 "http_proxy": "http://127.0.0.1:9",
+                                 "https_proxy": "http://127.0.0.1:9"}):
+        opener = mihomo_mod._direct_opener()
+    proxied = [h.proxies for h in opener.handlers
+               if isinstance(h, urllib.request.ProxyHandler) and h.proxies]
+    if proxied:
+        problems.append(f"_direct_opener 继承了环境变量里的代理：{proxied}"
+                        "（源自检会变成「经代理自检」，量到的不是源站容量）")
+
+
 def _argparse_defaults(path: Path) -> dict[str, object]:
     """从 main.py 源码里抽 `add_argument("--x", ..., default=...)`，避免 import 触发副作用。"""
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -195,6 +355,13 @@ def test_defaults_no_drift(problems: list[str]) -> None:
         problems.append(f"refine_bytes({b_refine}) 必须大于 speed_bytes({b_screen})，"
                         f"否则复测等于没做")
 
+    m_src = cli.get("--speed-sources")
+    b_src = sig.parameters["speed_sources"].default
+    if m_src is None:
+        problems.append("main.py 里没有 --speed-sources（多源只能在代码里改）")
+    elif m_src != b_src:
+        problems.append(f"--speed-sources 默认值 {m_src} 与 build() 的 {b_src} 不一致")
+
 
 def main() -> int:
     problems: list[str] = []
@@ -202,15 +369,20 @@ def main() -> int:
     test_failed_refine_keeps_old(problems)
     test_skip_conditions(problems)
     test_floor_arithmetic(problems)
+    test_median(problems)
+    test_pick_sources(problems)
+    test_refine_passes_sources(problems)
+    test_direct_measure(problems)
     test_defaults_no_drift(problems)
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:
             print("   -", item)
         return 1
-    print(f"✓ 复测下载量接线正确：{SCREEN_BYTES // 1000000} MB（上限 "
+    print(f"✓ 复测接线正确：{SCREEN_BYTES // 1000000} MB（上限 "
           f"{ceiling(SCREEN_BYTES):.0f} MB/s）→ {REFINE_BYTES // 1000000} MB（上限 "
-          f"{ceiling(REFINE_BYTES):.0f} MB/s），失败不冲掉初筛值，默认值无漂移")
+          f"{ceiling(REFINE_BYTES):.0f} MB/s）；多源取中位数已接通，"
+          f"源自检按比例剔除、失败不冲掉初筛值、默认值无漂移")
     return 0
 
 

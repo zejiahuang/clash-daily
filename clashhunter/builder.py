@@ -182,6 +182,10 @@ def build(
     # 复测单独用更大的下载量：6 MB 会把快节点顶到 max(span, 0.05) 的地板上，
     # 算出来的数字是「除出来的」而不是「测出来的」。算式见 _refine_speed 的 docstring。
     refine_bytes: int = 24_000_000,
+    # 复测对几个测速源各测一遍、取中位数。0 = 只用单一 speed_url（旧行为）。
+    # 源不写死：由 _pick_sources() 在运行时直连自检决定用哪几个 —— runner 机房每天变。
+    speed_sources: int = 3,
+    source_min_ratio: float = 0.4,
     # ⚠️ 默认关闭。两轮实测（run #12/#13）都没拿到可信数据：
     # #12 跳板 5.1 MB/s（比样本最慢的还慢），判据被压平却报了 9 个假阳性；
     # #13 跳板 11.1 MB/s，40 个样本里 27 个经跳板完全测不出，比值中位数 0.30。
@@ -309,15 +313,23 @@ def build(
             result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
             log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
 
-            # 复测：低并发 + 更大的下载量重测「可能进入最终名单」的那批。
+            # 复测：低并发 + 更大的下载量 + 多个测速源取中位数，重测「可能进入最终名单」的那批。
             # 为什么必须换更大的下载量、为什么不能沿用初筛的 speed_bytes，
             # 算式与实测依据都在 _refine_speed 的 docstring 里。
+            sources: list[tuple[str, str]] = []
+            if refine_top > 0:
+                # 自检是**串行**的：并行会让几个源互相抢 runner 的出口带宽，
+                # 量到的就不是各自的容量了。6 个源最坏 60 秒，一天一次可以接受。
+                sources = _pick_sources(
+                    mh, nbytes=refine_bytes, timeout=speed_timeout,
+                    want=speed_sources, min_ratio=source_min_ratio, log=log,
+                )
             improved = _refine_speed(
                 mh, candidates, probes,
                 top=refine_top, workers=refine_workers,
                 speed_url=speed_url, speed_bytes=refine_bytes,
                 speed_timeout=speed_timeout, ip_timeout=ip_timeout,
-                screen_bytes=speed_bytes, log=log,
+                screen_bytes=speed_bytes, sources=sources, log=log,
             )
             if improved is not None:
                 result.stats.speed_ok = sum(
@@ -441,7 +453,8 @@ def _shown_speed(speed: float) -> float:
 def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
                   top: int, workers: int, speed_url: str, speed_bytes: int,
                   speed_timeout: float, ip_timeout: float,
-                  screen_bytes: int = 0, log=print) -> int | None:
+                  screen_bytes: int = 0, sources: list[tuple[str, str]] | None = None,
+                  log=print) -> int | None:
     """对初筛最快的一批用低并发 + 更大的下载量重测，原地更新 probes。
 
     返回「比初筛更快」的个数；`top<=0` 或没有可复测的项时返回 None。
@@ -459,6 +472,10 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
 
     初筛保持小下载量：1400 个 × 24 MB = 33 GB，只为排个序不值得；
     复测 300 个 × 24 MB = 7.2 GB 上限，且每个都被 `speed_timeout` 兜住。
+
+    `sources` 非空时每个节点对每个源各下一份 `speed_bytes`，`speed` 取中位数
+    ⇒ 总流量是单源的 `len(sources)` 倍。这是「让多个网站各自说话」的代价，
+    可以用 `--speed-sources` 调小。
     """
     if top <= 0:
         return None
@@ -472,6 +489,8 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
         hint += (f"（初筛 {screen_bytes / 1048576:.0f} MB，"
                  f"上限从 {screen_bytes / 1048576 / 0.05:.0f} MB/s 抬到 "
                  f"{speed_bytes / 1048576 / 0.05:.0f} MB/s）")
+    if sources:
+        hint += f"，{len(sources)} 个源取中位数（总流量 ×{len(sources)}）"
     log(f"  复测前 {len(refine)} 个（并发 {workers}{hint}，"
         f"消除初筛抢带宽造成的低估与 0.05 秒地板截断）")
 
@@ -479,7 +498,7 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
         refine,
         speed_url=speed_url, speed_bytes=speed_bytes,
         speed_timeout=speed_timeout, ip_timeout=ip_timeout,
-        workers=workers, log=log,
+        workers=workers, sources=sources, log=log,
     )
     improved = 0
     for name, item in again.items():
@@ -489,6 +508,53 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
                 improved += 1
             probes[name] = item
     return improved
+
+
+# 一个测速源自己都跑不到这个速度，经它测出来的节点读数就永远到不了这个值
+# —— 那是源的天花板，不是节点的。低于它的一律不采用。
+SOURCE_MIN_MBS = 20.0
+
+
+def _pick_sources(mh, *, nbytes: int, timeout: float, want: int,
+                  min_ratio: float, log=print) -> list[tuple[str, str]]:
+    """直连自检每个候选测速源，挑出**当天真的跑得动**的几个。
+
+    为什么必须当场量：runner 所在机房每天变（凤凰城 / 博伊德尔 / 昆西 / 得梅因 /
+    圣何塞都出现过），某个源今天从某个机房能不能跑满，事先不可能知道。
+    把「哪个源可用」写死在代码里，等于把某一天的测量结果当成永久事实。
+
+    `want<=0` 或一个源都不可用时返回空列表 ⇒ 退回单一 `speed_url`（旧行为）。
+    """
+    if want <= 0:
+        return []
+    log(f"  测速源自检（直连，不经节点，每源 {nbytes / 1e6:.0f} MB）")
+    rows = mh.measure_sources(max_bytes=nbytes, timeout=timeout, log=log)
+    usable = [r for r in rows if r["speed"] > 0]
+    if not usable:
+        log("  ⚠️ 没有任何测速源能跑通 ⇒ 退回单一源。"
+            "若单一源是 Cloudflare，注意 bytes 在 11~20 MB 区间会稳定 403")
+        return []
+
+    best = usable[0]["speed"]
+    floor = max(SOURCE_MIN_MBS, best * min_ratio)
+    keep = [r for r in usable if r["speed"] >= floor][:want]
+    if not keep:
+        # 所有源都低于门槛（机房出口整体很慢的一天）：至少留最快的那个，
+        # 否则整轮退化成单源，反而更差。
+        keep = usable[:1]
+        log(f"  ⚠️ 最快的源也只有 {best:.1f} MB/s，低于门槛 {floor:.1f} "
+            f"⇒ 只留 {keep[0]['label']}，本轮读数会被它压住")
+
+    skipped = [r for r in rows if r not in keep]
+    if skipped:
+        detail = "、".join(
+            f"{r['label']}({r['speed']:.1f})" if r["speed"] > 0
+            else f"{r['label']}(不可用)" for r in skipped)
+        log(f"  未采用：{detail}")
+    log(f"  ⇒ 采用 {len(keep)} 个源取中位数："
+        f"{' / '.join(r['label'] for r in keep)}"
+        + ("（两源时中位数即均值）" if len(keep) == 2 else ""))
+    return [(r["label"], r["url"]) for r in keep]
 
 
 # 跳板必须落在这里，「亚太视角」才成立。含大洋洲与南亚：它们到国内的路径

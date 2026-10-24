@@ -52,19 +52,68 @@ TEST_URL = "http://www.gstatic.com/generate_204"
 SPEED_URL = "https://speed.cloudflare.com/__down?bytes={bytes}"
 LISTENER_BASE_PORT = 20000
 
+# 测速源候选。复测时每个节点对**多个源**各测一遍，取中位数 —— 一个源只代表
+# 「到那个站有多快」，多个源的中位数才接近「到互联网整体有多快」。
+#
+# ⚠️ 这里只是**候选**。真正用哪几个由运行时自检决定（`Mihomo.measure_sources`）：
+# runner 所在机房每天变（凤凰城 / 博伊德尔 / 昆西 / 得梅因 / 圣何塞都出现过），
+# 某个源今天从某个机房能不能跑满，事先是不知道的，只能当场量。
+#
+# ⚠️ 带 `{bytes}` 的是模板（服务端按参数生成），不带的必须是**足够大的固定文件**
+# —— measure_speed() 读满 max_bytes 就断开，所以文件只要比它大即可。
+#
+# ⚠️ Cloudflare 的 `bytes` 参数有一段**稳定 403 区间：11,000,000 ≤ bytes < 20,000,000**
+# （2026-10-24 实测，10M 以下与 20M 以上都是 200）。落在这一段里，每个节点都会
+# 测出 0，而 measure_speed() 是 catch 后返回 0 的 —— **静默全灭**。
+# 默认复测量 24 MB 在安全侧，但换值时必须先跑 `--speed-sources 0` 看自检表。
+SPEED_SOURCES = (
+    ("cloudflare", "https://speed.cloudflare.com/__down?bytes={bytes}"),
+    ("ovh", "https://proof.ovh.net/files/100Mb.dat"),
+    ("hetzner-ash", "https://ash-speed.hetzner.com/100MB.bin"),
+    ("hetzner-fsn", "https://speed.hetzner.de/100MB.bin"),
+    ("tele2", "http://speedtest.tele2.net/100MB.zip"),
+    ("thinkbb", "https://download.thinkbroadband.com/100MB.zip"),
+)
+
 # 多目标可达性探测。主延迟只用 TEST_URL（Google）一个目标，而「能通 Google」
 # 不等于「能通别的站」—— 有些免费节点专门针对 Google 优化过。
 # 这几个都是标准的 captive-portal 检测端点，全球可用、返回体极小。
 #
-# ⚠️ 为什么不换测速目标：实测从 CI 测 speedtest.net 的日本服务器只有 1.07 MB/s，
-# 而 Cloudflare 是 7.0 MB/s。差的那 6 倍是测速服务器自己的带宽上限，不是节点的问题
-# —— 拿它当测速目标会系统性低估所有节点。Cloudflare 是唯一带宽够高的目标。
+# ⚠️ 为什么不拿 speedtest.net 的服务器当测速目标：实测从 CI 测它的日本服务器只有
+# 1.07 MB/s，而 Cloudflare 是 7.0 MB/s。差的那 6 倍是测速服务器自己的带宽上限，
+# 不是节点的问题 —— 拿它当目标会系统性低估所有节点。所以测速源只从 SPEED_SOURCES
+# 里挑，且每个源都必须先通过直连容量自检。
 REACH_TARGETS = (
     ("google", "http://www.gstatic.com/generate_204"),
     ("cloudflare", "http://cp.cloudflare.com/generate_204"),
     ("microsoft", "http://www.msftconnecttest.com/connecttest.txt"),
     ("apple", "http://captive.apple.com/hotspot-detect.html"),
 )
+
+
+def _direct_opener():
+    """不走任何代理的 opener。
+
+    显式传空 ProxyHandler：只写 `build_opener()` 会继承环境变量里的 HTTP_PROXY，
+    在设了代理的机器上「直连自检」会变成「经代理自检」，量到的就不是源站容量了。
+    """
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _median(values: list[float]) -> float:
+    """中位数。空列表返回 0。
+
+    为什么不用平均数：一个源偶发被限速（比如某次只给了 3 MB/s），平均数会被它
+    拽下来，中位数不会。两个源时取两者平均（标准中位数定义）。
+    """
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
 
 
 def _plausible_exit_ip(text: str) -> bool:
@@ -412,9 +461,12 @@ class Mihomo:
                 continue
         return None
 
-    def measure_speed(self, port: int, url: str = SPEED_URL,
+    def measure_speed(self, port: int | None, url: str = SPEED_URL,
                       max_bytes: int = 6_000_000, timeout: float = 10.0) -> float:
         """下载一段固定大小的数据，返回**平均**速度（MB/s）。失败返回 0。
+
+        `port is None` 表示**直连**（不走任何代理）。这一路只用来做测速源的容量自检：
+        「这个源本身能跑多快」，不含节点那一段。
 
         ⚠️ 平均值的分母必须从「收到第一个字节」算起，不能从发请求算起。
         从发请求算的话分母里含了 TCP+TLS 握手，而握手成本对每个节点是**固定**的
@@ -424,6 +476,7 @@ class Mihomo:
 
         分母下限取 0.05 s：极快的节点可能在两三个 chunk 内就把数据收完，
         真实跨度只有几毫秒，不设下限会除出几十上百 MB/s 的假数字。
+        ⚠️ 这个下限同时是**读数上限**：`max_bytes / 1048576 / 0.05`。见 _refine_speed。
         """
         # URL 里的 {bytes} 必须跟着 max_bytes 走，否则「下够多少」和「服务器发多少」
         # 会对不上：服务器先 EOF，循环提前结束，改 max_bytes 等于没改。
@@ -437,7 +490,8 @@ class Mihomo:
         first_byte_at = 0.0
         last_byte_at = 0.0
         try:
-            with self._opener(port).open(req, timeout=timeout) as resp:
+            opener = self._opener(port) if port is not None else _direct_opener()
+            with opener.open(req, timeout=timeout) as resp:
                 while total < max_bytes:
                     chunk = resp.read(min(65536, max_bytes - total))
                     if not chunk:
@@ -455,18 +509,49 @@ class Mihomo:
         span = max(last_byte_at - first_byte_at, 0.05)
         return (total / span) / 1048576
 
-    def probe_one(self, port: int, *, speed_url: str, speed_bytes: int,
-                  speed_timeout: float, ip_timeout: float) -> dict:
+    def measure_sources(self, sources=SPEED_SOURCES, *, max_bytes: int = 24_000_000,
+                        timeout: float = 10.0, log=None) -> list[dict]:
+        """直连测每个候选源自己的容量，返回 [{label, url, speed}]，按速度降序。
+
+        这是「让多个网站各自说话」的前置条件：**一个源自己跑不到 20 MB/s，
+        经过它测出来的节点读数就永远到不了 20** —— 那是源的天花板，不是节点的。
+        所以先用直连把每个源量一遍，跑不动的直接踢掉。
+        """
+        rows: list[dict] = []
+        for label, url in sources:
+            speed = self.measure_speed(None, url, max_bytes, timeout)
+            rows.append({"label": label, "url": url, "speed": speed})
+            if log:
+                log(f"    {label:<14} {speed:7.2f} MB/s")
+        rows.sort(key=lambda r: -r["speed"])
+        return rows
+
+    def probe_one(self, port: int, *, speed_url: str = SPEED_URL,
+                  speed_bytes: int = 6_000_000, speed_timeout: float = 10.0,
+                  ip_timeout: float = 6.0,
+                  sources: list[tuple[str, str]] | None = None) -> dict:
         """先测速再测出口 IP：速度 0 说明节点不可用，不必再花时间问 IP。
+
+        `sources` 非空时对每个源各测一遍，`speed` 取**中位数**，各源读数留在
+        `speeds` 里（排查「只有某个源快」时要用）。为空则退回单一 `speed_url`。
 
         `ip_timeout <= 0` 表示跳过出口 IP（交叉复测时用：出口 IP 上一轮已经拿到，
         再问一次纯属浪费）。
         """
-        speed = self.measure_speed(port, speed_url, speed_bytes, speed_timeout)
+        speeds: dict[str, float] = {}
+        if sources:
+            for label, url in sources:
+                value = self.measure_speed(port, url, speed_bytes, speed_timeout)
+                if value > 0:
+                    speeds[label] = value
+            speed = _median(list(speeds.values()))
+        else:
+            speed = self.measure_speed(port, speed_url, speed_bytes, speed_timeout)
+
         exit_ip = None
         if speed > 0 and ip_timeout > 0:
             exit_ip = self.exit_ip(port, ip_timeout)
-        return {"speed": speed, "exit_ip": exit_ip}
+        return {"speed": speed, "speeds": speeds, "exit_ip": exit_ip}
 
     def probe_all(
         self,
@@ -480,12 +565,16 @@ class Mihomo:
         batch_size: int = 150,
         base_port: int = LISTENER_BASE_PORT,
         hop: dict | None = None,
+        sources: list[tuple[str, str]] | None = None,
         log=print,
     ) -> dict[str, dict]:
         """分批给每个节点绑一个入站端口，并行测速 + 探出口 IP。
 
         `hop` 非空时，每个被测节点都挂上 `dialer-proxy: <hop 名>`，链路变成
         本机 → hop → 节点 → 目标站。hop 自己不进 ports，所以不占监听端口。
+
+        `sources` 非空时每个节点对多个源各测一遍、取中位数（复测用）；
+        为空则只打 `speed_url` 一个源（初筛用 —— 1400 个节点 × 多源太贵）。
 
         ⚠️ 串起来的链路速度取「最慢的一段」，而 `本机 → hop` 这一段就在路径里
         ⇒ **hop 自身的速度就是整轮测速的天花板**。它只适合回答
@@ -498,8 +587,11 @@ class Mihomo:
         hop_name = hop["name"] if hop else None
         if hop_name and any(p["name"] == hop_name for p in proxies):
             raise ValueError(f"跳板 {hop_name} 不能同时出现在被测节点里（会自我循环）")
+        src_note = (f"，{len(sources)} 个源取中位数"
+                    f"（{'/'.join(label for label, _ in sources)}）" if sources else "")
         log(f"  下载测速：{total} 个节点，并发 {workers}，"
             f"每个最多下 {speed_bytes / 1e6:.1f}MB，超时 {speed_timeout:.0f}s"
+            f"{src_note}"
             + (f"，经跳板 {hop_name}" if hop_name else ""))
 
         done = 0
@@ -525,6 +617,7 @@ class Mihomo:
                             self.probe_one, ports[p["name"]],
                             speed_url=speed_url, speed_bytes=speed_bytes,
                             speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+                            sources=sources,
                         ): p["name"]
                         # 遍历 targets 而不是 batch：batch 里那个跳板没有端口
                         for p in targets
