@@ -25,7 +25,6 @@ run.zip
 
 # 临时探测文件
 *.bin
-speedtest-probe.json
 
 # 本地试跑产物
 /out*/
