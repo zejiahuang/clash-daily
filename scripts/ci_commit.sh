@@ -47,10 +47,39 @@ if git diff --cached --quiet; then
 fi
 git commit -m "$MSG"
 
+# ⚠️ 推送前必须先 rebase。一轮构建十几分钟，这期间**远端会动**：人手工推了代码，
+#    或者另一个流水线刚提交了产物。在旧基线上直接 push 会被拒（`! [rejected]
+#    (fetch first)`），而这一步失败 = 整轮产物丢失，外部只看到「阶段变红」，
+#    产物文件停在上一轮的时间戳 —— 和「构建没跑」长得一模一样。
+#    2026-10-24 本地手工推的时候连着踩了三次，每次都得手动 fetch + rebase。
+#
+# 注意 rebase 的是**产物提交**（只动 dist/），落在新代码之上是安全的；
+# 真冲突（两个流水线同时写 dist/）就 abort 并失败退出，不硬来。
+sync_and_push() {
+  local url="$1"
+  local attempt
+  for attempt in 1 2 3; do
+    if git push "$url"; then
+      return 0
+    fi
+    echo "push 被拒（第 ${attempt} 次），fetch + rebase 到远端后重试"
+    if ! git fetch "$url" HEAD; then
+      echo "  fetch 失败，放弃"
+      return 1
+    fi
+    if ! git rebase FETCH_HEAD; then
+      git rebase --abort || true
+      echo "  rebase 冲突（多半是两个流水线同时写 dist/），放弃"
+      return 1
+    fi
+  done
+  return 1
+}
+
 # 检出用的凭据不一定带写权限。先试默认，失败再显式带 CNB_TOKEN。
 # ⚠️ 失败时把 CNB_* 环境变量打出来 —— 变量名猜错的话下次还是错的，
 #    打出来才知道真名。
-if git push; then
+if sync_and_push origin; then
   exit 0
 fi
 
@@ -67,4 +96,8 @@ if [ -z "${CNB_TOKEN:-}" ]; then
 fi
 
 base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
-git push "https://cnb:${CNB_TOKEN}@${base#https://}"
+if sync_and_push "https://cnb:${CNB_TOKEN}@${base#https://}"; then
+  exit 0
+fi
+echo "带凭据重试也失败 —— 产物没提交上去"
+exit 1
