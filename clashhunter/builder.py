@@ -96,7 +96,7 @@ def build(
     speed_workers: int = 16,
     speed_max: int = 400,
     ip_timeout: float = 6.0,
-    max_nodes: int = 300,
+    max_nodes: int = 100,
     top_per_country: int = 0,
     no_speedtest: bool = False,
     log=print,
@@ -116,6 +116,7 @@ def build(
             "articles": report.articles,
             "count": len(report.proxies),
             "error": report.error,
+            "note": report.note,
         })
     result.stats.raw = len(raw)
     failed = [s["id"] for s in result.sources if s["error"]]
@@ -496,7 +497,12 @@ def _render_markdown(result: BuildResult) -> str:
 
     lines += ["", "## 源站", ""]
     for source in result.sources:
-        state = "OK" if not source["error"] else f"失败：{source['error']}"
+        if source["error"]:
+            state = f"失败：{source['error']}"
+        elif source.get("note"):
+            state = f"OK（{source['note']}）"
+        else:
+            state = "OK"
         lines.append(f"- `{source['id']}`：{source['count']} 个候选 — {state}")
     lines.append("")
     return "\n".join(lines)
