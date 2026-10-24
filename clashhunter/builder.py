@@ -164,8 +164,14 @@ def build(
     delay_url: str = TEST_URL,
     delay_timeout_ms: int = 5000,
     delay_workers: int = 32,
-    # 多目标可达性诊断（Google / Cloudflare / 微软 / Apple）。默认开，纯诊断不筛选。
-    reach_check: bool = True,
+    # 多目标可达性诊断（Google / Cloudflare / 微软 / Apple）。默认关闭。
+    # 实测 run #15：1446 个节点里 77.2% 四个目标全通，「只通一个」的只有 7 个（0.5%）
+    # ⇒ 区分度太低，花 60~100 秒换这个结论不值得每轮跑。
+    # 这个结论本身有价值（它排除了「节点只针对 Google 优化」的担心），所以代码留着，
+    # --reach-check 可随时打开复查。
+    # ⚠️ 那一轮还有 36 个「延迟阶段通过、可达性阶段 4 个全不通」的，大概率是假阴性：
+    #    延迟阶段每节点 1 次请求，这一步每节点 4 次，同并发 32 下节点被压垮。
+    reach_check: bool = False,
     speed_url: str = SPEED_URL,
     speed_bytes: int = 6_000_000,
     speed_timeout: float = 10.0,
