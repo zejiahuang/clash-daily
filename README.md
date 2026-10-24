@@ -296,3 +296,56 @@ python tests/test_sources.py
 2. **Gitee 会按文件内容做审核**：纯 `ss` 配置返回 200，一旦含
    `type: vmess` / `vless` / `trojan` 就返回 `451 The content may contain violation information`。
    所以 Gitee 不能作为真实产物的分发地址。
+
+---
+
+## 九、AtomGit 镜像（代码在，但**不能当订阅直链**）
+
+镜像仓库：<https://atomgit.com/StriveGlory/daily-config>
+
+### 为什么不能当订阅地址
+
+2026-10-24 实测了 **12 种**可能的 raw 地址形式，**没有一种返回文件原文**：
+
+| 地址形式 | 结果 |
+|---|---|
+| `atomgit.com/<o>/<r>/raw/main/<path>` | 200，`text/html` 5526 B（前端 SPA） |
+| `atomgit.com/<o>/<r>/-/raw/main/<path>` | 200，前端 SPA |
+| `atomgit.com/<o>/<r>/raw/branch/main/<path>` | 200，前端 SPA |
+| `atomgit.com/<o>/<r>/blob_plain/main/<path>` | 200，前端 SPA |
+| `raw.atomgit.com/<o>/<r>/main/<path>` | 200，前端 SPA |
+| `gitcode.com/<o>/<r>/raw/main/<path>` | 200，前端 SPA |
+| `raw.gitcode.com/<o>/<r>/raw/main/<path>` | 403 |
+| `api.atomgit.com/api/v5/repos/<o>/<r>/raw/main/<path>` | 404 |
+| `api.atomgit.com/api/v5/repos/<o>/<r>/download/<path>` | 404 |
+| `api.atomgit.com/api/v5/repos/<o>/<r>/contents/<path>?ref=main` | 200，但返回 **JSON**（`encoding: base64`） |
+| `.../contents/<path>?ref=main&raw=1` | 同上，仍是 JSON |
+| `.../blobs/main/<path>/raw` | 404 |
+
+**根因**：AtomGit 是纯前端渲染（Vue SPA，资源全在 `cdn-static.gitcode.com`），
+服务端把所有 `/raw/` 路径都路由到前端入口，真正的文件内容由 JS 调
+`/api/v5/.../contents/...` 拿 base64 再在浏览器里解码。
+**服务端不存在任何「直接吐原文」的端点**，所以 Clash / 任何订阅客户端都拿不到。
+唯一能取到原文的接口是 contents API，但它是 JSON 包着 base64 —— 客户端不认。
+
+⇒ **订阅地址必须继续放在 GitHub**（`raw.githubusercontent.com`）。
+AtomGit 这边只是**代码镜像 + 产物存档**，供人浏览，不能订阅。
+
+### 一个反直觉的发现：AtomGit 不拦内容
+
+Gitee 会按文件内容审核（含 `vmess/vless/trojan` 就 451），但 AtomGit **完全不拦**：
+23 个文件全部上传成功，包括 `dist/clash.yaml`（含 vmess/vless/trojan 节点）
+和 `uri.py`（源码里有 `vmess://` 字符串）。
+
+但**仓库名会被拦**：`clash-daily` 报「项目名称,路径存在违规内容」，
+换成 `daily-config` 才建成。所以仓库叫 `daily-config`，不是 `clash-daily`。
+
+### 怎么同步过去
+
+```bash
+ATOM_TOKEN=<你的 AtomGit 个人访问令牌> python .local-tools/sync_atomgit.py
+```
+
+脚本逐文件比对内容（`GET /contents/{path}` 拿 sha + base64 内容），只传有变化的，
+并把 `dist/` 里的最新产物一并带上。注意 AtomGit 的认证头是 **`PRIVATE-TOKEN`**
+（`Authorization: token xxx` 会 401，`Authorization: Bearer xxx` 也行）。
