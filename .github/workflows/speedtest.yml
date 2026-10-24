@@ -1,0 +1,111 @@
+# 下载测速 —— 跑在 GitHub runner 上，结果回传给 CNB。
+#
+# 为什么测速要单独放到这里：CNB runner 的出口只有 3~4 MB/s，节点再快也读成 3~4；
+# GitHub runner 的出口宽得多，读数才不会被测速机本身压住。
+# 代价是速度变成「GitHub runner → 节点」，所以 CNB 侧会把两个位置都写进产物头部。
+#
+# 触发方式：CNB 把 dist/candidates.json 强推到 ci-handoff 分支 ⇒ 本工作流启动。
+# ⚠️ 分支名**不能带斜杠**：raw.githubusercontent.com 的地址是
+#    /{owner}/{repo}/{branch}/{path}，分支名带斜杠时靠「最长前缀匹配」猜，
+#    猜错就是 404，而 CNB 那边只会表现为「一直等不到结果」。
+#
+# ⚠️ paths 过滤只认 dist/candidates.json：本工作流自己提交的 dist/speed.json
+#    不在过滤里，所以不会自己触发自己。
+name: speedtest
+
+on:
+  push:
+    branches: [ci-handoff]
+    paths: ["dist/candidates.json"]
+  workflow_dispatch:
+
+concurrency:
+  group: speedtest-ci-handoff
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  speed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci-handoff
+          # 要往同一个分支提交回去，拿全历史最稳（默认 depth=1 也能推，但
+          # 一旦远端被别人改过就没有可 rebase 的基点）
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          set -e
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 看看这一轮要测什么
+        run: |
+          set -e
+          python - <<'EOF'
+          import json
+          d = json.load(open("dist/candidates.json", encoding="utf-8"))
+          print("run_id:", d.get("run_id"))
+          print("延迟测速位置:", d.get("vantage") or "未知")
+          print("候选:", len(d.get("candidates") or []))
+          s = d.get("stats") or {}
+          print("上游计数:", {k: s.get(k) for k in ("raw", "unique", "tcp_alive", "delay_ok")})
+          EOF
+
+      - name: 下载测速（经节点，用 Cloudflare）
+        run: |
+          set -e
+          # 并发 / 下载量 / 复测个数**不在这里传**：它们跟着 dist/candidates.json
+          # 的 knobs 字段过来（源头是 CNB 按钮上的参数）。在这里再写一份就会
+          # 出现「按钮改了但没生效」——两边各说各话。
+          python main.py --stage speed \
+            --in dist/candidates.json \
+            --speed-out dist/speed.json \
+            --work work
+
+      - name: 结果摘要
+        if: always()
+        run: |
+          test -s dist/speed.json || { echo "没有 speed.json"; exit 0; }
+          python - <<'EOF'
+          import json
+          d = json.load(open("dist/speed.json", encoding="utf-8"))
+          s = d.get("stats") or {}
+          print(f"run_id={d.get('run_id')} 可用 {s.get('ok')}/{s.get('total')} "
+                f"耗时 {d.get('seconds')}s 位置 {d.get('vantage')}")
+          for item in s.get("errors") or []:
+              print(f"  {item['count']:>4} 个  {item['reason']}")
+          EOF
+
+      - name: 提交回 ci-handoff
+        if: always()
+        run: |
+          set -e
+          # 测速那一步挂了就不会有 speed.json —— 这时候**什么都不提交**。
+          # 提交一份空/旧结果会让 CNB 那边「看起来收到了」，产物却没有任何速度。
+          test -f dist/speed.json || { echo "没有 speed.json，不提交"; exit 0; }
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/speed.json
+          if git diff --cached --quiet; then
+            echo "dist/speed.json 没有变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore(speed): $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间"
+          # 推送被拒只可能是「这期间 CNB 又强推了一轮」。rebase 一下再试一次；
+          # 还失败就让本 job 红 —— CNB 那边等不到 run_id 匹配的结果会明确报错，
+          # 比在这里悄悄吞掉强。
+          if git push; then exit 0; fi
+          echo "push 被拒，rebase 后重试"
+          git fetch origin ci-handoff
+          git rebase origin/ci-handoff || { git rebase --abort || true; exit 1; }
+          git push
