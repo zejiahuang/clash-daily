@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T19:24:34+08:00",
+  "generated_at": "2026-10-24T19:27:03+08:00",
   "system": {
     "nproc": 8,
     "nofile": [
@@ -11,9 +11,25 @@
     "cgroup_mem_max_v1": "17179869184"
   },
   "egress": {
-    "ip": null,
-    "geo": null,
-    "err_ip": "URLError: <urlopen error [Errno 111] Connection refused>"
+    "ip": "111.230.93.5",
+    "geo": {
+      "status": "success",
+      "country": "China",
+      "countryCode": "CN",
+      "regionName": "Guangdong",
+      "city": "Guangzhou",
+      "isp": "Shenzhen Tencent Computer Systems Company Limited"
+    },
+    "tries": [
+      {
+        "url": "https://api.ipify.org",
+        "err": "URLError: <urlopen error [Errno 111] Connection refused>"
+      },
+      {
+        "url": "http://icanhazip.com",
+        "ip": "111.230.93.5"
+      }
+    ]
   },
   "github": {
     "file": "https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
@@ -22,25 +38,25 @@
         "url": "https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 178,
+        "ms": 463,
         "bytes": 4869,
-        "mbps": 0.03,
+        "mbps": 0.01,
         "err": null
       },
       {
         "url": "https://gh-proxy.com/https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 891,
+        "ms": 934,
         "bytes": 4869,
-        "mbps": 0.01,
+        "mbps": 0.0,
         "err": null
       },
       {
         "url": "https://cdn.akaere.online/https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 1518,
+        "ms": 982,
         "bytes": 4869,
         "mbps": 0.0,
         "err": null
@@ -52,9 +68,9 @@
       "url": "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
       "ok": true,
       "status": 200,
-      "ms": 684,
+      "ms": 261,
       "bytes": 65536,
-      "mbps": 0.09,
+      "mbps": 0.24,
       "err": null,
       "body": "{\n  \"url\": \"https://api.github.com/repos/MetaCubeX/mihomo/releases/419818179\",\n  \"assets_url\": \"https://api.github.com/repos/MetaCubeX/mihomo/releases/419818179/assets\",\n  \"upload_url\": \"https://uploads.github.com/repos/MetaCubeX/mihomo/releases/419818179/assets{?name,label}\",\n  \"html_url\": \"https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33\",\n  \"id\": 419818179,\n  \"author\": {\n    \"login\": \"github-actions[bot]\",\n    \"id\": 41898282,\n    \"node_id\": \"MDM6Qm90NDE4OTgyODI=\",\n    \"avatar_url\": \"https://avatars.githubusercontent.com/in/15368?v=4\",\n    \"gravatar_id\": \"\",\n    \"url\": \"https://api.github.com/users/github-actions%5Bbot%5D\",\n    \"html_url\": \"https://github.com/apps/github-actions\",\n    \"followers_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/followers\",\n    \"following_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}\",\n    \"gists_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}\",\n    \"starred_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}\",\n    \"subscriptions_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/subscriptions\",\n    \"organizations_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/orgs\",\n    \"repos_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/repos\",\n    \"events_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}\",\n    \"received_events_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/received_events\",\n    \"type\": \"Bot\",\n    \"user_view_type\": \"public\",\n    \"site_admin\": false\n  },\n  \"node_id\": \"RE_kwDOFgE5N84ZBerD\",\n  \"tag_name\": \"v1.19.33\",\n  \"target_commitish\": \"main\",\n  \"name\": \"v1.19.33\",\n  \"draft\": false,\n  \"immutable\": false,\n  \"prerelease\": false,\n  \"created_at\": \"2026-10-21T15:51:58Z\",\n  \"updated_at\": \"2026-10-21T16:57:06Z\",\n  \"published_at\": \"2026-10-21T16:56:13Z\",\n  \"assets\": [\n    {\n      \"url\": \"https://api.github.com/repos/MetaCubeX/mihomo/releases/assets/663189186\",\n      \"id\": 663189186,\n      \"node_id\": \"RA_kwDOFgE5N84nh3bC\",\n      \"name\": \"mihomo-android-386-v1.19.33.gz\",\n      \"label\": \"\",\n      \"uploader\": {\n        \"login\": \"github-actions[bot]\",\n        \"id\": 41898282,\n        \"node_id\": \"MDM6Qm90NDE4OTgyODI=\",\n        \"avatar_url\": \"https://avatars.githubusercontent.com/in/15368?v=4\",\n        \"gravatar_id\": \"\",\n        \"url\": \"https://api.github.com/users/github-actions%5Bbot%5D\",\n        \"html_url\": \"https://github.com/apps/github-actions\",\n        \"followers_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/followers\",\n        \"following_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}\",\n        \"gists_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}\",\n        \"starred_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}\",\n        \"subscriptions_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/subscriptions\",\n        \"organizations_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/orgs\",\n        \"repos_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/repos\",\n        \"events_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}\",\n        \"received_events_url\": \"https://api.github.com/users/github-actions%5Bbot%5D/received_events\",\n        \"type\": \"Bot\",\n        \"user_view_type\": \"public\",\n        \"site_admin\": false\n      },\n      \"content_type\": \"application/gzip\",\n      \"state\": \"uploaded\",\n      \"size\": 23687570,\n      \"digest\": \"sha256:9f0a0a02bd6c9895575f696308bbcbdea3e48af8199e57730e95264254c91ce5\",\n      \"download_count\": 267,\n      \"created_at\": \"2026-10-21T16:55:56Z\",\n      \"updated_at\": \"2026-10-21T16:56:10Z\",\n      \"browser_download_url\": \"https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-android-386-v1.19.33.gz\"\n    },\n    {\n      \"url\": \"https://api.github.com/repos/MetaCubeX/mihomo/releases/assets/663189199\",\n      \"id\":"
     },
@@ -66,27 +82,27 @@
         "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 1264,
+        "ms": 942,
         "bytes": 1048576,
-        "mbps": 0.79,
+        "mbps": 1.06,
         "err": null
       },
       {
         "url": "https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 9275,
+        "ms": 3368,
         "bytes": 1048576,
-        "mbps": 0.11,
+        "mbps": 0.3,
         "err": null
       },
       {
         "url": "https://cdn.akaere.online/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 4473,
+        "ms": 7464,
         "bytes": 1048576,
-        "mbps": 0.22,
+        "mbps": 0.13,
         "err": null
       }
     ]
@@ -96,9 +112,9 @@
       "url": "https://speed.cloudflare.com/__down?bytes=1000000",
       "ok": true,
       "status": 200,
-      "ms": 1894,
+      "ms": 2261,
       "bytes": 1000000,
-      "mbps": 0.5,
+      "mbps": 0.42,
       "err": null
     }
   ],
@@ -107,7 +123,7 @@
       "url": "https://manifest.dpdns.org/today/",
       "ok": true,
       "status": 200,
-      "ms": 701,
+      "ms": 831,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -116,7 +132,7 @@
       "url": "https://manifest.dpdns.org/free/latest/clash.yaml",
       "ok": true,
       "status": 200,
-      "ms": 1992,
+      "ms": 694,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -125,7 +141,7 @@
       "url": "https://clash-node.com/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 779,
+      "ms": 2367,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -134,7 +150,7 @@
       "url": "https://v2rayfree.org/",
       "ok": true,
       "status": 200,
-      "ms": 1112,
+      "ms": 770,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -143,7 +159,7 @@
       "url": "https://stelliberty.com/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 1617,
+      "ms": 924,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -152,7 +168,7 @@
       "url": "https://lancex.net/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 3358,
+      "ms": 1683,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -161,7 +177,7 @@
       "url": "https://nodetoolbox.net/free-nodes/",
       "ok": true,
       "status": 200,
-      "ms": 503,
+      "ms": 484,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -170,7 +186,7 @@
       "url": "https://clashsuburl.com/free-nodes/",
       "ok": true,
       "status": 200,
-      "ms": 608,
+      "ms": 648,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -199,7 +215,7 @@
       "url": "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
       "ok": true,
       "status": 200,
-      "ms": 184,
+      "ms": 189,
       "bytes": 2048,
       "mbps": 0.01,
       "err": null
@@ -215,5 +231,5 @@
       "skipped": "github-raw 目录地址，不是文件；主机连通性见 github 段"
     }
   ],
-  "elapsed_s": 31.1
+  "elapsed_s": 29.0
 }
