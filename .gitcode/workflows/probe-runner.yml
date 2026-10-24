@@ -1,0 +1,133 @@
+name: 探测 Runner 位置与出网
+
+# 目的：在真正搭每日流水线之前，先量出这台 runner 的三件事
+#   1. 出口 IP 与归属地（决定测速视角是不是「中国大陆附近」）
+#   2. 能不能访问 api.github.com（决定产物能不能推回 GitHub —— AtomGit 自己不能当订阅直链）
+#   3. 能不能下载 mihomo、访问各源站与测速端点
+# 只要第 2 条不通，整个方案就不成立，所以必须单独测。
+on:
+  push:
+    paths:
+      - '.gitcode/workflows/probe-runner.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: probe
+    runs-on: default
+    timeout-minutes: 15
+    steps:
+      - name: 基本信息
+        run: |
+          echo "=== 系统 ==="
+          uname -a || true
+          cat /etc/os-release 2>/dev/null | head -5 || true
+          echo "=== 工具 ==="
+          python3 -V || true
+          git --version || true
+          curl --version | head -1 || true
+          echo "=== 环境变量 ==="
+          env | grep -i '^ATOMGIT' | sed 's/=.*/=<set>/' || true
+          echo "cwd=$(pwd)"
+          df -h / | tail -1 || true
+
+      - name: 探测出网与位置
+        run: |
+          python3 - <<'PY'
+          import json, socket, ssl, time, urllib.request
+
+          UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                                "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"}
+
+          def get(url, timeout=15, read=400):
+              t0 = time.time()
+              req = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  body = r.read(read)
+              return r.status, body, (time.time() - t0) * 1000
+
+          print("=" * 62)
+          print("1) 出口 IP 与归属地（多源交叉，避免单点被墙误判）")
+          print("=" * 62)
+          egress = []
+          for url in ("https://api.ipify.org?format=json",
+                      "https://ifconfig.me/ip",
+                      "https://ipinfo.io/json",
+                      "https://myip.ipip.net",
+                      "https://cip.cc"):
+              try:
+                  st, body, ms = get(url, read=600)
+                  txt = body.decode("utf-8", "replace").replace("\n", " ")[:180]
+                  print(f"  OK  {ms:7.0f}ms  {url}\n      {txt}")
+                  if "ipify" in url:
+                      try: egress.append(json.loads(txt)["ip"])
+                      except Exception: pass
+                  if "ipinfo" in url:
+                      try:
+                          d = json.loads(txt); egress.append(d.get("ip",""))
+                      except Exception: pass
+              except Exception as exc:
+                  print(f"  ERR           {url}  {type(exc).__name__}: {str(exc)[:90]}")
+
+          ip = next((x for x in egress if x), None)
+          if ip:
+              try:
+                  st, body, ms = get(f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city,isp,org,as")
+                  print(f"\n  GeoIP(ip-api): {body.decode('utf-8','replace')[:260]}")
+              except Exception as exc:
+                  print(f"\n  GeoIP(ip-api) ERR {type(exc).__name__}: {str(exc)[:90]}")
+
+          print()
+          print("=" * 62)
+          print("2) 关键端点可达性（★ = 决定方案成立与否）")
+          print("=" * 62)
+          targets = [
+              ("★ api.github.com",        "https://api.github.com/rate_limit"),
+              ("★ raw.githubusercontent", "https://raw.githubusercontent.com/zejiahuang/clash-daily/main/README.md"),
+              ("  github.com",            "https://github.com"),
+              ("  gh-proxy.com",          "https://gh-proxy.com/https://raw.githubusercontent.com/zejiahuang/clash-daily/main/requirements.txt"),
+              ("  cdn.akaere.online",     "https://cdn.akaere.online/https://raw.githubusercontent.com/zejiahuang/clash-daily/main/requirements.txt"),
+              ("  speed.cloudflare.com",  "https://speed.cloudflare.com/__down?bytes=1000"),
+              ("  ip-api.com",            "http://ip-api.com/json/1.1.1.1"),
+              ("  gstatic(直连)",         "http://www.gstatic.com/generate_204"),
+              ("  源站 clash-node",       "https://clash-node.com/free-node/"),
+              ("  源站 v2rayfree",        "https://v2rayfree.org/"),
+              ("  源站 stelliberty",      "https://stelliberty.com/free-node/"),
+              ("  源站 manifest",         "https://manifest.dpdns.org/today/"),
+              ("  源站 nodetoolbox",      "https://nodetoolbox.net/free-nodes/"),
+              ("  源站 clashsuburl",      "https://clashsuburl.com/free-nodes/"),
+              ("  源站 lancex",           "https://lancex.net/free-node/"),
+              ("  node.lancex.net",       "https://node.lancex.net/"),
+          ]
+          for label, url in targets:
+              try:
+                  st, body, ms = get(url, timeout=20, read=200)
+                  print(f"  OK  {st}  {ms:7.0f}ms  {label}  ({len(body)}B)")
+              except Exception as exc:
+                  code = getattr(exc, "code", "")
+                  print(f"  ERR {code or type(exc).__name__:>5}          {label}  {str(exc)[:80]}")
+
+          print()
+          print("=" * 62)
+          print("3) DNS 解析（域名能解析不代表能连）")
+          print("=" * 62)
+          for host in ("api.github.com", "raw.githubusercontent.com",
+                       "github.com", "speed.cloudflare.com"):
+              try:
+                  t0 = time.time()
+                  ips = sorted({i[4][0] for i in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)})
+                  print(f"  {host:<28} {(time.time()-t0)*1000:6.0f}ms  {ips}")
+              except Exception as exc:
+                  print(f"  {host:<28} ERR {type(exc).__name__}: {exc}")
+          PY
+
+      - name: 测 GitHub API 写权限（只读探测，不写入）
+        run: |
+          echo "如果上一步 api.github.com 通，这里看它是否接受令牌（没有 secret 就跳过）"
+          if [ -z "${{ secrets.GH_TOKEN }}" ]; then
+            echo ":: 未配置 secrets.GH_TOKEN，跳过"
+          else
+            curl -s -o /dev/null -w "rate_limit with token -> HTTP %{http_code}\n" \
+              -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+              --max-time 20 https://api.github.com/rate_limit || true
+          fi
