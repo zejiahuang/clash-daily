@@ -9,7 +9,7 @@ on:
       max_nodes:
         description: "最终最多保留多少个节点"
         required: false
-        default: "100"
+        default: "80"
       speed_max:
         description: "测速前最多保留多少个节点（0=不预采样，延迟可用的全部测速）"
         required: false
@@ -78,16 +78,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 单元测试（解析器 / 二分定位 / 分层取样 / 源站适配器）
+      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 分层取样 / 源站适配器）
         run: |
           python tests/test_parsers.py
           python tests/test_bisect.py
+          python tests/test_speed_math.py
           python tests/test_selection.py
           python tests/test_sources.py
 
       - name: 采集 · 测速 · 生成配置
         env:
-          MAX_NODES: ${{ inputs.max_nodes || '100' }}
+          MAX_NODES: ${{ inputs.max_nodes || '80' }}
           SPEED_MAX: ${{ inputs.speed_max || '0' }}
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
