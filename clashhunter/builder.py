@@ -241,11 +241,12 @@ def build(
     # 只收录「实测出速度」的节点。speed=0 有两种含义：节点不可用，或者压根没被测到；
     # 两种写进名字里都是 0.0MB/S，对使用者没有意义。
     # 实测过一轮：测速前截断到 400 时，最终 100 个里有 21 个是 0.0MB/S —— 就是这条没做。
+    # 判据用「显示值」而不是原始值，否则 0.004 MB/S 会漏过去变成 0.0MB/S。
     if probes:
-        measured = [p for p in candidates if _speed_of(p, probes) > 0]
+        measured = [p for p in candidates if _shown_speed(_speed_of(p, probes)) > 0]
         if measured:
             log(f"  实测有速度的节点 {len(measured)}/{len(candidates)}，"
-                f"丢弃 {len(candidates) - len(measured)} 个 0 速度节点")
+                f"丢弃 {len(candidates) - len(measured)} 个显示为 0.0MB/S 的节点")
             candidates = measured
 
     code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
@@ -305,6 +306,15 @@ def build(
 
 def _speed_of(proxy: dict, probes: dict[str, dict]) -> float:
     return float(probes.get(proxy["name"], {}).get("speed") or 0.0)
+
+
+def _shown_speed(speed: float) -> float:
+    """节点名里实际会显示出来的速度值（保留 1 位小数）。
+
+    过滤必须按「显示值」而不是「原始值」：实测有一个节点原始速度 0.004 MB/S，
+    原始值 > 0 能过过滤，但名字写成 `XX-01-0.0MB/S` —— 对使用者就是个坏节点。
+    """
+    return float(f"{speed:.1f}")
 
 
 def _rank(candidates: list[dict], probes: dict[str, dict]) -> list[dict]:
