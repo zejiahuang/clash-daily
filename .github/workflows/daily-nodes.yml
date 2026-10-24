@@ -27,9 +27,9 @@ on:
         required: false
         default: "16"
       apac_check_top:
-        description: "经亚太节点当跳板复测最快的多少个（0=不做交叉验证）"
+        description: "经亚太节点当跳板复测最快的多少个（0=关闭，默认；想试给 40）"
         required: false
-        default: "40"
+        default: "0"
       apac_check_workers:
         description: "亚太复测并发（必须 1：跳板上行是共享的，并发会一起压平）"
         required: false
@@ -110,7 +110,7 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
           REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
-          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '40' }}
+          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '0' }}
           APAC_CHECK_WORKERS: ${{ inputs.apac_check_workers || '1' }}
           APAC_MIN_HOP: ${{ inputs.apac_min_hop || '8' }}
           SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
