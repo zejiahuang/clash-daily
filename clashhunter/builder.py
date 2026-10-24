@@ -45,6 +45,9 @@ class BuildResult:
     sources: list[dict] = field(default_factory=list)
     countries: dict[str, int] = field(default_factory=dict)
     generated_at: str = ""
+    # 测速机所在位置。速度是「这台机器 → 节点」的实测值，换个地方测就是另一个数，
+    # 所以必须写进订阅文件头部，否则使用者会把它当成自己那边的速度。
+    vantage: str = ""
 
 
 # --------------------------------------------------------------------------- 延迟测速
@@ -102,10 +105,11 @@ def build(
     max_nodes: int = 100,
     top_per_country: int = 0,
     no_speedtest: bool = False,
+    vantage: str = "",
     log=print,
 ) -> BuildResult:
     started = time.time()
-    result = BuildResult()
+    result = BuildResult(vantage=vantage)
 
     # 1. 采集 -------------------------------------------------------------
     log("[1/6] 采集源站")
@@ -474,6 +478,13 @@ def _header(result: BuildResult) -> str:
         f"# 节点数量：{result.stats.accepted}",
         f"# 覆盖地区：{'、'.join(f'{k}×{v}' for k, v in result.countries.items())}",
         "# 节点名格式：国家-序号-实测峰值速度（MB/S）",
+    ]
+    # 速度是「测速机 → 节点」的单点实测值，换一台机器测就是另一个数。
+    # 不写清测速机在哪，使用者会把它当成自己那边的速度。
+    if result.vantage:
+        lines.append(f"# 测速位置：{result.vantage}"
+                     "（该速度是这台机器到节点的实测值，不代表你所在网络的速度）")
+    lines += [
         "# 免费节点随时可能失效，仅供学习与技术研究使用",
         "# ============================================================",
         "",
@@ -556,6 +567,8 @@ def _render_markdown(result: BuildResult) -> str:
         "",
         f"- 生成时间：**{result.generated_at}**（北京时间）",
         f"- 最终可用节点：**{stats.accepted}**",
+        (f"- 测速位置：**{result.vantage}**（速度是该机器到节点的实测值）"
+         if result.vantage else "- 测速位置：未记录"),
         "",
         "## 各阶段过滤",
         "",
