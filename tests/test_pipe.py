@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clashhunter.builder import (  # noqa: E402
     PIPE_PROBE_BYTES,
     RETRY_BYTES,
+    SCREEN_BYTES,
+    SCREEN_RESOLVE_MBS,
     SOURCE_MIN_MBS,
     _fit_to_pipe,
     _measure_pipe,
@@ -323,20 +325,46 @@ def test_exit_ip_total_budget(problems: list[str]) -> None:
 
 
 def test_probe_env_threshold_no_drift(problems: list[str]) -> None:
-    """`probe_env.py` 的门槛必须与 `builder.SOURCE_MIN_MBS` 一致。
+    """`probe_env.py` 的三个常量与结论文案都必须与 `builder._fit_to_pipe` 同规则。
 
     那个脚本跑在 `pip install` 之前，只能抄一份常量；抄错了不会报错，
     只会让「报告里的结论」和「流水线实际怎么做」对不上 —— 而人只会读报告。
+
+    ⚠️ 常量对得上**不等于**文案对得上。这个文件曾经抄对了门槛（20），
+    文案却还写着「⇒ 初筛会压到 1 并发 × 1 MB」，而代码早已改成
+    「N 并发 × 256 KB」。数字一致掩盖了句子过时，这种「一半同步」最难发现 ——
+    所以下面既比对数字，也禁止过时措辞。
     """
     text = (ROOT / "scripts" / "probe_env.py").read_text(encoding="utf-8")
-    match = re.search(r"^PIPE_MIN_MBS\s*=\s*([0-9.]+)", text, re.M)
-    if not match:
-        problems.append("probe_env.py 里找不到 PIPE_MIN_MBS")
-        return
-    got = float(match.group(1))
-    if abs(got - SOURCE_MIN_MBS) > 1e-9:
-        problems.append(f"probe_env.PIPE_MIN_MBS={got} 与 builder.SOURCE_MIN_MBS="
-                        f"{SOURCE_MIN_MBS} 不一致 —— 报告结论会和流水线实际行为相反")
+
+    def const(name: str) -> float | None:
+        match = re.search(rf"^{name}\s*=\s*([0-9.]+)", text, re.M)
+        return float(match.group(1)) if match else None
+
+    pairs = [
+        ("PIPE_MIN_MBS", SOURCE_MIN_MBS),
+        ("PIPE_RESOLVE_MBS", SCREEN_RESOLVE_MBS),
+        ("PIPE_SCREEN_MB", SCREEN_BYTES),
+    ]
+    for name, want in pairs:
+        got = const(name)
+        if got is None:
+            problems.append(f"probe_env.py 里找不到 {name}")
+        elif abs(got - want) > 1e-9:
+            problems.append(f"probe_env.{name}={got} 与 builder 侧 {want} 不一致 —— "
+                            f"报告结论会和流水线实际行为相反")
+
+    # 过时措辞：窄管道规则早就不是「1 并发」了，那句 1 并发实测多烧 8 分钟。
+    for stale in ("1 并发 × 1 MB", "压到 1 并发"):
+        if stale in text:
+            problems.append(f"probe_env.py 还留着过时文案「{stale}」—— "
+                            f"当前规则是「每连接 {SCREEN_RESOLVE_MBS} MB/s 反推并发 × "
+                            f"{SCREEN_BYTES * 1024:.0f} KB」，报告会与代码各说各话")
+
+    # 反过来也要钉：窄管道分支必须真的把算出来的并发数写出来，否则人读报告
+    # 只能看到「压并发」，看不到压到几个 —— 上次就是这么漏过去的。
+    if "PIPE_RESOLVE_MBS" not in text.split("def _verdict", 1)[-1]:
+        problems.append("_verdict 的窄管道分支没有用 PIPE_RESOLVE_MBS 反推并发数")
 
 
 def test_top_reason(problems: list[str]) -> None:
