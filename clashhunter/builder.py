@@ -148,6 +148,7 @@ def build(
 
     delays: dict[str, int] = {}
     probes: dict[str, dict] = {}
+    pre_codes: dict[str, str] = {}
     candidates = alive
 
     if no_speedtest:
@@ -173,8 +174,18 @@ def build(
             candidates.sort(key=lambda p: delays[p["name"]])
             if not candidates:
                 raise SystemExit("延迟测速后没有任何节点可用")
+
+            # 按国家分层取样再测速。
+            # 不做这一步的话，直接取"延迟最低的前 N 个"等于只挑离 runner 最近的节点：
+            # 实测在美西 runner 上，200 个结果里 179 个是美国节点，
+            # 因为美国节点延迟 10–40ms、亚洲节点 150–250ms，纯按延迟排根本轮不到它们。
+            pre_codes = _server_countries(candidates, log=log)
             if speed_max > 0:
-                candidates = candidates[:speed_max]
+                candidates = _stratified(
+                    candidates, speed_max, pre_codes, key=lambda p: delays[p["name"]]
+                )
+                log(f"  按国家分层后进入测速 {len(candidates)} 个，"
+                    f"覆盖 {len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区")
 
             # 5. 下载测速 + 出口 IP --------------------------------------
             log("[5/6] 下载测速与出口 IP")
@@ -192,10 +203,11 @@ def build(
     # 6. 国家判定 + 重命名 -------------------------------------------------
     log("[6/6] 国家判定与重命名")
     candidates = _rank(candidates, probes)
+    code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
     if max_nodes > 0:
-        candidates = candidates[:max_nodes]
-
-    code_of = _resolve_countries(candidates, probes, log=log)
+        candidates = _stratified(
+            candidates, max_nodes, code_of, key=lambda p: -_speed_of(p, probes)
+        )
 
     grouped: dict[str, list[dict]] = defaultdict(list)
     for proxy in candidates:
@@ -260,7 +272,54 @@ def _rank(candidates: list[dict], probes: dict[str, dict]) -> list[dict]:
     return with_speed + without
 
 
-def _resolve_countries(candidates: list[dict], probes: dict[str, dict], *, log=print) -> dict[str, str]:
+def _stratified(items: list[dict], limit: int, code_of: dict[str, str], *, key) -> list[dict]:
+    """按国家分层截断：每个国家先分一份配额，再用剩下的名额按 key 补齐。
+
+    目的：避免"延迟最低的前 N 个"被 runner 所在地区整体占满。
+    每个国家至少能分到 max(1, limit // 国家数) 个名额。
+    """
+    if limit <= 0 or len(items) <= limit:
+        return items
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        buckets[code_of.get(item["name"], "??")].append(item)
+
+    quota = max(1, limit // len(buckets))
+    picked: list[dict] = []
+    rest: list[dict] = []
+    for code in sorted(buckets, key=lambda c: (-len(buckets[c]), c)):
+        bucket = buckets[code]
+        picked.extend(bucket[:quota])
+        rest.extend(bucket[quota:])
+    if len(picked) < limit:
+        rest.sort(key=key)
+        picked.extend(rest[:limit - len(picked)])
+    return sorted(picked, key=key)
+
+
+def _server_countries(proxies: list[dict], *, log=print) -> dict[str, str]:
+    """用「服务器 IP」粗判国家，只用于分层取样，不用于最终命名。
+
+    比出口 IP 粗糙（CDN 场景会判成边缘节点所在地），但便宜得多，
+    而且是测速之前就能拿到的唯一国家信息。
+    """
+    if not proxies:
+        return {}
+    resolved = geoip.resolve_many([p["server"] for p in proxies], log=log)
+    geo = geoip.lookup_batch(list(resolved.values()), log=log)
+    out: dict[str, str] = {}
+    for proxy in proxies:
+        ip = resolved.get(proxy["server"])
+        hit = geo.get(ip) if ip else None
+        if hit and hit[0]:
+            out[proxy["name"]] = hit[0]
+    log(f"  服务端 IP 定位成功 {len(out)}/{len(proxies)}")
+    return out
+
+
+def _resolve_countries(candidates: list[dict], probes: dict[str, dict],
+                       *, base: dict[str, str] | None = None,
+                       log=print) -> dict[str, str]:
     """国家判定优先级：出口 IP > 服务端 IP > 节点名里的地区标签。"""
     code_of: dict[str, str] = {}
 
@@ -278,16 +337,14 @@ def _resolve_countries(candidates: list[dict], probes: dict[str, dict], *, log=p
                 code_of[name] = hit[0]
     log(f"  出口 IP 定位成功 {len(code_of)}")
 
-    # 2. 服务端 IP 兜底
-    rest = [p for p in candidates if p["name"] not in code_of]
-    if rest:
-        resolved = geoip.resolve_many([p["server"] for p in rest], log=log)
-        geo2 = geoip.lookup_batch(list(resolved.values()), log=log)
-        for proxy in rest:
-            ip = resolved.get(proxy["server"])
-            hit = geo2.get(ip) if ip else None
-            if hit and hit[0]:
-                code_of[proxy["name"]] = hit[0]
+    # 2. 服务端 IP 兜底（复用测速前那次查询，避免重复请求）
+    for proxy in candidates:
+        name = proxy["name"]
+        if name in code_of:
+            continue
+        hint = (base or {}).get(name)
+        if hint:
+            code_of[name] = hint
 
     # 3. 节点名兜底
     for proxy in candidates:
