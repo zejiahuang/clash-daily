@@ -33,6 +33,10 @@ on:
         description: '每个节点下载多少字节用于测速（越小越快，但快节点会被分母下限截顶）'
         required: false
         default: '6000000'
+      apac_check_top:
+        description: '经亚太节点当跳板复测最快的多少个（0=不做交叉验证）'
+        required: false
+        default: '120'
 
 concurrency:
   max: 1
@@ -72,11 +76,12 @@ jobs:
           python3 -m pip install --upgrade pip -q || true
           python3 -m pip install -r requirements.txt -q
 
-      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 分层取样 / 源站适配器）
+      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 亚太复测 / 分层取样 / 源站适配器）
         run: |
           python3 tests/test_parsers.py
           python3 tests/test_bisect.py
           python3 tests/test_speed_math.py
+          python3 tests/test_apac.py
           python3 tests/test_selection.py
           python3 tests/test_sources.py
 
@@ -86,6 +91,7 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           SPEED_MAX: ${{ inputs.speed_max || '0' }}
           SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
+          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '120' }}
         run: |
           python3 main.py \
             --out dist \
@@ -93,7 +99,8 @@ jobs:
             --max-nodes "$MAX_NODES" \
             --speed-workers "$SPEED_WORKERS" \
             --speed-max "$SPEED_MAX" \
-            --speed-bytes "$SPEED_BYTES"
+            --speed-bytes "$SPEED_BYTES" \
+            --apac-check-top "$APAC_CHECK_TOP"
 
       - name: 校验产物
         run: |
