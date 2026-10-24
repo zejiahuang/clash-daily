@@ -264,20 +264,33 @@ def build(
             # 算式与实测依据都在 _refine_speed 的 docstring 里。
             sources: list[tuple[str, str]] = []
             if refine_top > 0 and 0 < pipe < SOURCE_MIN_MBS:
-                # 复测要解决的问题是「0.05 秒地板」和「并发抢带宽」造成的低估。
-                # 管道比这两个效应都窄时，复测读数一模一样，只是白花时间：
-                # 300 × 24 MB = 7.2 GB，按 1 MB/s 是两小时。
+                # 窄管道下复测**更**必要，不是更没必要。
+                # 初筛必须靠并发换时间：卡住的节点烧满超时且几乎不占带宽，
+                # 串行会把它们一个个等过去（2026-10-24 实测 964 秒里有 480 秒
+                # 花在 50 个这样的节点上）。而并发把读数摊平到 `管道/并发`，
+                # 所以要用 1 并发独占管道把前 N 个的真实速度量回来。
+                # ⚠️ 上一版在这里**跳过**复测，理由是「管道比 0.05 秒地板和抢带宽
+                # 都窄，复测读数不会变」—— 那个理由只在初筛也用 1 并发时成立，
+                # 而初筛用 1 并发正是产生那 8 分钟的那一版。
+                refine_top = min(refine_top, NARROW_REFINE_TOP)
+                refine_workers = 1
+                refine_bytes = min(refine_bytes, NARROW_REFINE_BYTES)
                 log(f"  ⚠️ 管道只有 {pipe:.2f} MB/s（门槛 {SOURCE_MIN_MBS:.0f}）"
-                    f"⇒ 跳过复测（读数被管道压住，换大下载量也不会变）")
-                refine_top = 0
-            if refine_top > 0:
-                # 自检是**串行**的：并行会让几个源互相抢 runner 的出口带宽，
-                # 量到的就不是各自的容量了。下载量与超时都压短，最坏 ~40 秒。
-                sources = _pick_sources(
-                    mh, nbytes=min(refine_bytes, PIPE_PROBE_BYTES),
-                    timeout=min(speed_timeout, PIPE_PROBE_TIMEOUT),
-                    want=speed_sources, min_ratio=source_min_ratio, log=log,
-                )
+                    f"⇒ 复测改成 1 并发 × {refine_bytes / 1e6:.1f} MB、"
+                    f"只测前 {refine_top} 个（初筛读数被摊平，得靠它量真值）")
+                # 多源取中位数要乘以源数，窄管道上太贵；先只用 speed_url。
+            if refine_top > 0 and not sources:
+                if speed_sources > 0 and pipe >= SOURCE_MIN_MBS:
+                    # 自检是**串行**的：并行会让几个源互相抢 runner 的出口带宽，
+                    # 量到的就不是各自的容量了。下载量与超时都压短，最坏 ~40 秒。
+                    sources = _pick_sources(
+                        mh, nbytes=min(refine_bytes, PIPE_PROBE_BYTES),
+                        timeout=min(speed_timeout, PIPE_PROBE_TIMEOUT),
+                        want=speed_sources, min_ratio=source_min_ratio, log=log,
+                    )
+                elif speed_sources > 0:
+                    log(f"     单源复测：多源取中位数要 ×{speed_sources} 的时间，"
+                        f"窄管道上不划算")
             improved = _refine_speed(
                 mh, candidates, probes,
                 top=refine_top, workers=refine_workers,
@@ -426,7 +439,10 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
 
     hint = f"，每个下 {speed_bytes / 1048576:.0f} MB"
     if screen_bytes > 0 and screen_bytes != speed_bytes:
-        hint += (f"（初筛 {screen_bytes / 1048576:.0f} MB，"
+        # 初筛量可能小于 1 MB（窄管道下是 256 KB），用 MB 打出来会变成「0 MB」。
+        screen_mb = screen_bytes / 1048576
+        screen_note = f"{screen_mb:.0f} MB" if screen_mb >= 1 else f"{screen_bytes // 1024} KB"
+        hint += (f"（初筛 {screen_note}，"
                  f"上限从 {screen_bytes / 1048576 / 0.05:.0f} MB/s 抬到 "
                  f"{speed_bytes / 1048576 / 0.05:.0f} MB/s）")
     if sources:
@@ -462,7 +478,22 @@ PIPE_PROBE_CONNS = 6
 
 # 全灭重试时的每节点下载量：必须高于 measure_speed_ex 的 64 KB 门槛，
 # 否则「读到了但太少」会和「什么都没读到」混在一起。
-RETRY_BYTES = 262_144
+RETRY_BYTES = 131_072
+
+# 窄管道下初筛用的每节点下载量。256 KB 给出的读数上限是 256K/0.05 = 5 MB/s，
+# 已经不低于这种管道的天花板；比 1 MB 少 4 倍字节，墙钟也少 4 倍。
+SCREEN_BYTES = 0.25
+
+# 窄管道下「每条连接至少该分到多少带宽」。初筛并发由它反推：
+# `workers = pipe / SCREEN_RESOLVE_MBS`。低于这个值的节点仍然读得准，
+# 高于它的节点一律被摊平到这个数 —— 所以它同时也是初筛的分辨率上限。
+SCREEN_RESOLVE_MBS = 0.5
+
+# 窄管道下复测多少个、每次下多少。复测是 1 并发独占管道，每个最坏烧满超时，
+# 24 个就是 4 分钟上限；再多就该靠初筛的粗排去淘汰了。
+# 1 MB 给出的读数上限是 20 MB/s，已经不高于窄管道的门槛 —— 再大只是拉长墙钟。
+NARROW_REFINE_TOP = 24
+NARROW_REFINE_BYTES = 1_048_576
 
 
 def _measure_pipe(mh, *, url: str, conns: int, nbytes: int, timeout: float,
@@ -508,15 +539,14 @@ def _fit_to_pipe(pipe: float, workers: int, nbytes: int, timeout: float,
     单连接读数在「按连接限速」的出口上会低估 K 倍。
 
     规则：
-      - 管道 < `SOURCE_MIN_MBS`（20 MB/s）时，**并发取 1**。
-        管道是瓶颈时，每连接只能分到 `pipe / workers`，并发只会把读数天花板
-        摊薄、把节点之间的差别压平，而整段墙钟（`节点数 × nbytes / pipe`）
-        与并发**无关** —— 多开并发只是把同一份带宽分给更多节点。
-        代价是失去握手时间的重叠（每个节点约 0.5 s），换来的是读数不被摊平
-        —— 产物名字里的速度就是读数，读数平了等于排名没有意义。
-      - 每节点下载量取 **1 MB**（不往上抬）。整段墙钟 ≈ `节点数 × nbytes / pipe`，
-        所以字节数越小越快；1 MB 给出的读数上限是 `1/0.05 = 20 MB/s`，
-        已经不高于这种管道的天花板，再大只是白花时间（5 MB 就是 5 倍墙钟）。
+      - 管道 < `SOURCE_MIN_MBS`（20 MB/s）时，**并发 = 管道 / 0.5，下限 2、上限 workers**。
+        ⚠️ 并发**不能取 1**。2026-10-24 那轮取 1 的结果：964 秒里有 480 秒花在
+        100→150 这 50 个节点上（每个烧满 10 秒超时，串行就是 8 分钟）。
+        超时是**延迟**不是带宽 —— 一个卡住的节点几乎不占带宽，所以并发摊薄的
+        只是「读数天花板」，换来的却是把超时重叠掉。每连接分到 0.5 MB/s 时，
+        慢于 0.5 MB/s 的节点读数仍然准确，快于它的会被摊平 —— 所以还要复测。
+      - 每节点下载量取 256 KB（只往下压，不往上抬）：读数上限 5 MB/s 已不低于
+        这种管道的天花板，字节数越小墙钟越短。
       - 管道够粗时只按 `workers × nbytes / pipe <= timeout/2` 收并发，下载量不动。
     """
     if pipe <= 0 or workers <= 0 or nbytes <= 0 or timeout <= 0:
@@ -526,16 +556,15 @@ def _fit_to_pipe(pipe: float, workers: int, nbytes: int, timeout: float,
     if pipe < SOURCE_MIN_MBS:
         # 只往下压，不往上抬：`--speed-bytes` 比这还小的时候它本来就来得及，
         # 悄悄改大等于覆盖了用户明确给的值。
-        # 下限 0.1 MB：再小就接近 measure_speed_ex 的 64 KB 门槛，
-        # 「读到了但太少」会和「什么都没读到」混在一起。
-        target = min(1.0, max(0.1, pipe * timeout / 2))
-        new_bytes = int(min(per_node, target) * 1048576)
+        new_workers = max(2, min(workers, int(pipe / SCREEN_RESOLVE_MBS)))
+        new_bytes = int(min(per_node, SCREEN_BYTES) * 1048576)
         log(f"  ⚠️ 出口管道只有 {pipe:.2f} MB/s（门槛 {SOURCE_MIN_MBS:.0f}）"
-            f"⇒ {workers} 并发 × {per_node:.1f} MB 改成 1 并发 × "
-            f"{new_bytes / 1e6:.1f} MB")
-        log(f"     读数天花板就是管道本身 ≈ {pipe:.2f} MB/s，"
-            f"再快的节点也测不过这个数（这是 runner 的带宽，不是节点的问题）")
-        return 1, new_bytes
+            f"⇒ {workers} 并发 × {nbytes / 1e6:.1f} MB 改成 {new_workers} 并发 × "
+            f"{new_bytes / 1024:.0f} KB")
+        log(f"     每连接分到约 {pipe / new_workers:.2f} MB/s，这就是初筛读数的天花板；"
+            f"再快的节点要靠复测（1 并发独占管道）才能量出来")
+        log(f"     并发不取 1：卡住的节点烧满超时且不占带宽，串行会把它们一个个等过去")
+        return new_workers, new_bytes
 
     budget = timeout * 0.5
     if workers * per_node / pipe <= budget:

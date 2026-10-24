@@ -57,24 +57,38 @@ class FakePipe:
 
 
 def test_fit_narrow(problems: list[str]) -> None:
-    """管道比门槛窄 ⇒ 并发压到 1，下载量降到 1 MB（不往上抬）。"""
-    workers, nbytes = _fit_to_pipe(1.06, 32, 6_000_000, 10.0, log=QUIET)
-    if workers != 1:
-        problems.append(f"管道 1.06 MB/s 时并发应压到 1，实际 {workers}")
-    if nbytes != 1048576:
-        problems.append(f"管道 1.06 MB/s 时每节点下载量应是 1 MB，实际 {nbytes}"
-                        f"（1 MB 给的读数上限 20 MB/s 已高于管道天花板；"
-                        f"再大只按倍数拉长墙钟）")
+    """管道比门槛窄 ⇒ 并发按「每连接 0.5 MB/s」反推，下载量降到 256 KB。
+
+    ⚠️ 并发**不能是 1**。2026-10-24 那轮取 1，964 秒里 480 秒花在 50 个
+    卡住的节点上（每个烧满 10 秒超时，串行就是 8 分钟）。超时是延迟不是带宽，
+    并发摊薄的只是读数天花板，换来的却是把超时重叠掉。
+    """
+    workers, nbytes = _fit_to_pipe(4.15, 32, 6_000_000, 10.0, log=QUIET)
+    if workers != 8:
+        problems.append(f"管道 4.15 MB/s 时并发应是 4.15/0.5≈8，实际 {workers}"
+                        f"（取 1 就是那 8 分钟；取 32 则每连接只有 0.13 MB/s）")
+    if nbytes != 262144:
+        problems.append(f"管道 4.15 MB/s 时每节点下载量应是 256 KB，实际 {nbytes}"
+                        f"（256 KB 的读数上限 5 MB/s 已高于管道天花板）")
+
+    workers, _ = _fit_to_pipe(0.3, 32, 6_000_000, 10.0, log=QUIET)
+    if workers < 2:
+        problems.append(f"管道 0.3 MB/s 时并发是 {workers}，下限应为 2"
+                        f"（1 并发 = 所有超时串行）")
+
+    workers, _ = _fit_to_pipe(4.15, 3, 6_000_000, 10.0, log=QUIET)
+    if workers > 3:
+        problems.append(f"--speed-workers=3 时并发被抬到 {workers}，不该超过用户给的上限")
 
 
 def test_fit_never_grows(problems: list[str]) -> None:
-    """`--speed-bytes` 已经比管道小的时候不能往上抬 —— 那会覆盖用户给的值。"""
-    workers, nbytes = _fit_to_pipe(1.0, 32, 300_000, 10.0, log=QUIET)
-    if nbytes != 300_000:
-        problems.append(f"用户已给 300 KB（小于管道 1 秒的量）时下载量被改成 {nbytes}"
+    """`--speed-bytes` 已经比窄管道该用的量还小时，不能往上抬 —— 那会覆盖用户给的值。"""
+    workers, nbytes = _fit_to_pipe(1.0, 32, 200_000, 10.0, log=QUIET)
+    if nbytes != 200_000:
+        problems.append(f"用户已给 200 KB（小于 256 KB）时下载量被改成 {nbytes}"
                         f" —— 只该往下压，不该往上抬")
-    if workers != 1:
-        problems.append(f"窄管道下并发仍应是 1，实际 {workers}")
+    if workers < 2:
+        problems.append(f"窄管道下并发不该是 {workers}（下限 2）")
 
 
 def test_fit_wide(problems: list[str]) -> None:
@@ -119,27 +133,28 @@ def test_fit_guarantees_reading(problems: list[str]) -> None:
 
 
 def test_fit_wall_time(problems: list[str]) -> None:
-    """整段墙钟 ≈ `节点数 × nbytes / 管道`，与并发无关。
+    """墙钟模型：`节点数 / 并发 × 单个节点的耗时`，其中卡住的节点耗时 = 超时。
 
-    这条是「中间有一段太长」的量化约束：354 个节点、管道 1 MB/s 时，
-    每节点 1 MB 就是 354 秒 —— 这是地板，不是调参能绕过的；
-    但如果下载量按「管道 1 秒的量」给（管道 5 MB/s 时给 5 MB），
-    墙钟会白白变成 5 倍（1770 秒），而读数一点没变好。
+    2026-10-24 的实测就摆在这条公式里：290 个节点、管道 4.15 MB/s、并发 1，
+    964 秒里 **480 秒**花在 50 个卡住的节点上（50 × 10s / 1 = 500s）。
+    它们一个字节都没下到，纯粹在等超时 —— 而超时是**延迟**，不是带宽，
+    所以提高并发能把它们重叠掉，几乎不影响真正在下载的节点分到的带宽。
     """
-    nodes = 354
-    for pipe in (1.0, 5.0, 10.0, 19.0):
-        _, nbytes = _fit_to_pipe(pipe, 32, 6_000_000, 10.0, log=QUIET)
-        wall = nodes * (nbytes / MB) / pipe
-        if wall > 600:
-            problems.append(f"管道 {pipe} MB/s 时这一阶段要 {wall:.0f}s"
-                            f"（{nodes} 个节点 × {nbytes / MB:.1f} MB / {pipe}）"
-                            f"，超过 10 分钟 —— 下载量应当再小")
-        if nbytes != 1048576:
-            problems.append(f"管道 {pipe} MB/s 时下载量应统一压到 1 MB，实际 "
-                            f"{nbytes / MB:.2f} MB（墙钟 {wall:.0f}s）")
+    pipe, timeout = 4.15, 10.0
+    hang, fast = 50, 240          # 实测：约 50 个烧满超时，其余几十毫秒就失败
 
-
-# --------------------------------------------------- B. 管道量的是并发总量
+    workers, nbytes = _fit_to_pipe(pipe, 32, 6_000_000, timeout, log=QUIET)
+    if workers <= 1:
+        problems.append(f"窄管道下并发是 {workers} —— 卡住的节点会一个个串行等过去，"
+                        f"{hang} × {timeout:.0f}s = {hang * timeout:.0f}s 白等")
+        return
+    wall = hang / workers * timeout + fast / workers * 0.05
+    if wall > 180:
+        problems.append(f"按实测分布估算墙钟 {wall:.0f}s，超过 3 分钟；并发 {workers} 太小")
+    need = (nbytes / MB) / (pipe / workers)
+    if need > timeout:
+        problems.append(f"每连接 {pipe / workers:.2f} MB/s 下读 {nbytes / MB:.2f} MB "
+                        f"要 {need:.0f}s，超过 {timeout:.0f}s 超时")
 
 
 def test_measure_pipe_uses_aggregate(problems: list[str]) -> None:
@@ -349,6 +364,41 @@ def test_top_reason(problems: list[str]) -> None:
                         f"进度行会被一条长错误撑满")
 
 
+def test_delay_url_is_https(problems: list[str]) -> None:
+    """延迟测速必须用 **https**。
+
+    2026-10-24 实测：延迟测速用 `http://` 明文、下载测速用 `https://`，
+    结果 290 个「延迟可用」节点里 **265 个**下载时报
+    `SSL: UNEXPECTED_EOF_WHILE_READING`（TLS 握手就被关掉）。
+    它们能过明文探测，却连一个 HTTPS 站点都打不开 —— 对用户毫无价值，
+    却占满了第 5 步的名额和时间。换成 https 探测，这批在延迟阶段就被筛掉。
+    """
+    from clashhunter.mihomo import TEST_URL
+
+    if not TEST_URL.startswith("https://"):
+        problems.append(f"TEST_URL = {TEST_URL!r} 不是 https —— 延迟测速会放行"
+                        f"「只能过 HTTP 明文」的节点，而下载测速必然失败")
+    # main.py 的 --delay-url 默认值必须同源，否则改了一处等于没改
+    text = (ROOT / "main.py").read_text(encoding="utf-8")
+    if 'default=TEST_URL' not in text:
+        problems.append("main.py 的 --delay-url 默认值不是 TEST_URL，两处会漂移")
+
+
+def test_narrow_pipe_refines(problems: list[str]) -> None:
+    """窄管道**不能**跳过复测，而且复测必须是 1 并发。
+
+    初筛为了摊掉超时只能开并发，读数被摊平到「管道/并发」；要把真值量回来
+    只能让复测独占管道。上一版在这里跳过复测，等于把摊平后的读数直接写进
+    节点名。
+    """
+    src = (ROOT / "clashhunter" / "builder.py").read_text(encoding="utf-8")
+    if "跳过复测" in src:
+        problems.append("builder.py 里还有「跳过复测」的窄管道分支 —— "
+                        "初筛被并发摊平之后，复测是唯一能拿到真值的一步")
+    if "NARROW_REFINE_TOP" not in src or "refine_workers = 1" not in src:
+        problems.append("窄管道下没有把复测压成「1 并发 + 前 N 个」")
+
+
 def main() -> int:
     problems: list[str] = []
     test_fit_narrow(problems)
@@ -367,13 +417,16 @@ def main() -> int:
     test_probe_budget(problems)
     test_probe_env_threshold_no_drift(problems)
     test_top_reason(problems)
+    test_delay_url_is_https(problems)
+    test_narrow_pipe_refines(problems)
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:
             print("   -", item)
         return 1
-    print("✓ 管道自检接线正确：并发总量当管道（不是单连接读数）、窄管道压到 1 并发、"
-          "宽管道只收并发、自检排在初筛之前、压完保证能读到 64 KB 之上")
+    print("✓ 管道自检接线正确：并发总量当管道（不是单连接读数）、窄管道按"
+          "「每连接 0.5 MB/s」开并发而不是串行、宽管道只收并发、自检排在初筛之前、"
+          "延迟探测走 https、窄管道靠 1 并发复测量真值")
     return 0
 
 

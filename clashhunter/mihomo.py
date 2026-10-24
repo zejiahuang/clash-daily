@@ -54,7 +54,14 @@ MIXED_PORT = 7891
 # 当前值对应的内核：`mihomo -v` → Mihomo Meta v1.19.33 (go1.26.10, 2026-10-21)
 PINNED_TAG = "v1.19.33"
 GROUP = "PROBE"
-TEST_URL = "http://www.gstatic.com/generate_204"
+TEST_URL = "https://www.gstatic.com/generate_204"
+# ⚠️ 这个 URL 必须是 **https**，原来写的是 `http://`。
+#    延迟测速用 HTTP、下载测速用 HTTPS，两个阶段测的就不是同一件事：
+#    2026-10-24 CNB 那轮 290 个「延迟可用」节点里，**265 个下载时报
+#    `SSL: UNEXPECTED_EOF_WHILE_READING`**（TLS 握手就被关掉）。
+#    它们能过 HTTP 明文探测，却连一个 HTTPS 站点都打不开 —— 对用户毫无价值
+#    （现代网页全是 HTTPS）。用 https 探测，这 265 个在延迟阶段就被筛掉，
+#    第 5 步只剩真正能用的那几十个，顺带省掉它们后面各自烧掉的等待。
 # ⚠️ 这里的字节数是**模板占位符**，由 measure_speed() 用 max_bytes 填。
 # 曾经写成固定的 `?bytes=2000000`，结果把 --speed-bytes 改成 6 MB 之后
 # 服务端仍然只发 2 MB 就 EOF，total 永远到不了 6 MB —— 改动静默失效，
