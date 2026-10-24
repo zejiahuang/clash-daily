@@ -113,7 +113,8 @@ def test_false_positive_rule(problems: list[str]) -> None:
 
     got = _apac_check(
         fake, cands, probes, code_of,
-        top=10, workers=4, speed_url="http://x", speed_bytes=1, speed_timeout=1,
+        top=10, workers=4, min_hop=8.0,
+        speed_url="http://x", speed_bytes=1, speed_timeout=1,
         log=lambda msg="": lines.append(msg),
     )
 
@@ -145,13 +146,73 @@ def test_no_apac_pool(problems: list[str]) -> None:
     fake = FakeMihomo({})
     got = _apac_check(
         fake, [node("US")], {"US": {"speed": 10.0, "exit_ip": "9.9.9.9"}}, {"US": "US"},
-        top=10, workers=4, speed_url="http://x", speed_bytes=1, speed_timeout=1,
+        top=10, workers=4, min_hop=8.0,
+        speed_url="http://x", speed_bytes=1, speed_timeout=1,
         log=QUIET,
     )
     if got:
         problems.append("没有亚太节点却返回了结果")
     if fake.asked:
         problems.append("没有亚太跳板却发起了复测")
+
+
+def test_slow_hop_skipped(problems: list[str]) -> None:
+    """跳板比被测样本还慢时必须直接跳过，不能硬测。
+
+    实测 run #12：跳板 5.1 MB/s，样本里最快的直连 19.7 —— 差 4 倍。
+    这一轮测出来的全是跳板自己的上限，却报了 9 个「假阳性」。
+    """
+    cands = [node("US-20"), node("JP-slow")]
+    probes = {
+        "US-20": {"speed": 19.7, "exit_ip": "9.9.9.9"},
+        "JP-slow": {"speed": 5.1, "exit_ip": "8.8.8.8"},
+    }
+    code_of = {"US-20": "US", "JP-slow": "JP"}
+    fake = FakeMihomo({"US-20": 1.0})
+    lines: list[str] = []
+    got = _apac_check(
+        fake, cands, probes, code_of,
+        top=10, workers=1, min_hop=8.0,
+        speed_url="http://x", speed_bytes=1, speed_timeout=1,
+        log=lambda msg="": lines.append(msg),
+    )
+    if got:
+        problems.append("跳板 5.1 < 门槛 8.0，却还是发起了复测")
+    if fake.asked:
+        problems.append("跳板不达标却仍然测了节点（会产出被压平的假数据）")
+    text = "\n".join(lines)
+    if "跳过交叉验证" not in text:
+        problems.append(f"跳板不达标时没有说明跳过原因：\n{text}")
+
+
+def test_no_resolution_guard(problems: list[str]) -> None:
+    """链路本身成为瓶颈时，不许输出假阳性判断。
+
+    判据：经跳板最快的那个都够不到天花板的一半 ⇒ 读数被压平，
+    无法区分「节点慢」和「链路慢」。run #12 正是 1.0 / 5.1 = 0.20 却报了 9 个假阳性。
+    """
+    cands = [node("US-20"), node("JP-hop"), node("US-19")]
+    probes = {
+        "US-20": {"speed": 19.7, "exit_ip": "9.9.9.9"},
+        "JP-hop": {"speed": 16.8, "exit_ip": "8.8.8.8"},
+        "US-19": {"speed": 19.6, "exit_ip": "7.7.7.7"},
+    }
+    code_of = {"US-20": "US", "JP-hop": "JP", "US-19": "US"}
+    # 天花板 16.8，但经跳板最快只测到 1.0（比值 0.06）—— 典型的链路瓶颈
+    fake = FakeMihomo({"US-20": 1.0, "US-19": 0.9})
+    lines: list[str] = []
+    _apac_check(
+        fake, cands, probes, code_of,
+        top=10, workers=1, min_hop=8.0,
+        speed_url="http://x", speed_bytes=1, speed_timeout=1,
+        log=lambda msg="": lines.append(msg),
+    )
+    text = "\n".join(lines)
+    if "无分辨力" not in text:
+        problems.append(f"读数被压平时没有提示无分辨力：\n{text}")
+    if "疑似假阳性" in text:
+        problems.append("读数被压平（最快 1.0 vs 天花板 16.8）却仍输出了假阳性判断"
+                        " —— 这正是 run #12 的错误")
 
 
 def test_apac_set(problems: list[str]) -> None:
@@ -171,6 +232,8 @@ def main() -> int:
     test_hop_wiring(problems)
     test_hop_self_loop(problems)
     test_false_positive_rule(problems)
+    test_slow_hop_skipped(problems)
+    test_no_resolution_guard(problems)
     test_no_apac_pool(problems)
     test_apac_set(problems)
     if problems:
@@ -179,7 +242,7 @@ def main() -> int:
             print("   -", item)
         return 1
     print("✓ 亚太复测通过：dialer-proxy 挂全、跳板不占端口、自我循环被拦、"
-          "假阳性判据只认「远低于天花板」")
+          "慢跳板直接跳过、读数被压平时不报假阳性")
     return 0
 
 
