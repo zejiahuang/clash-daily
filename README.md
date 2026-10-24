@@ -44,9 +44,47 @@ GitHub 托管的 `ubuntu-latest` 跑在美西，所以默认测出来的是美�
  "regionName":"California","city":"San Jose","isp":"Microsoft Corporation"}
 ```
 
-想换成亚太视角，不需要改代码：在仓库 **Settings → Secrets and variables → Actions →
-Variables** 新建一个变量 `RUNNER_LABEL`，值填你的 self-hosted runner 标签（如 `asia`）。
-工作流里的 `runs-on` 会自动切过去。
+### 换成亚太视角（self-hosted runner）
+
+需要一台香港 / 日本 / 新加坡的机器（1 核 2 GB 就够）。**代码一行不用改**，
+工作流里的 `runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}` 会自动跟随仓库变量。
+
+**① 取注册令牌**（有效期 1 小时）
+
+```bash
+curl -sX POST -H "Authorization: Bearer <你的 PAT>" \
+  https://api.github.com/repos/zejiahuang/clash-daily/actions/runners/registration-token
+```
+
+也可以在仓库页面 **Settings → Actions → Runners → New self-hosted runner** 里取 `--token` 的值。
+
+**② 在亚太机器上跑安装脚本**
+
+```bash
+RUNNER_TOKEN=<上一步拿到的令牌> bash scripts/install-runner.sh
+```
+
+脚本做四件事：装依赖（curl/tar/git/python3）、下载对应架构的 runner、
+用标签 `asia` 注册、装成 systemd 服务并启动。
+
+**③ 确认上线**
+
+仓库 **Settings → Actions → Runners**，这台机器应显示 **Idle**，标签里能看到 `asia`。
+**这一步没确认之前不要设变量** —— 设了但 runner 不在线，任务会一直排队直到超时。
+
+**④ 打开开关**
+
+**Settings → Secrets and variables → Actions → Variables** 新建 `RUNNER_LABEL`，值 `asia`。
+
+**⑤ 验证视角真的变了**
+
+手动跑一次，看「记录测速机位置」那一步输出的国家。改之前是
+`United States / Virginia`，改成亚太 runner 后应该变成 `Hong Kong` / `Japan` / `Singapore`。
+`dist/runner-geo.json` 里也有同样的记录。
+
+> ⚠️ 公开仓库 + self-hosted runner 有已知风险：fork 发起的 PR 能在你的机器上执行任意代码。
+> 本项目的工作流**只挂了 `schedule` 和 `workflow_dispatch`，没有 `pull_request`**，
+> 所以外部无法触发。**后续不要给它加 PR 触发**，否则这台机器等于对外开放。
 
 ---
 
