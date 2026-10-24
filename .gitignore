@@ -3,6 +3,8 @@
 /work/
 /work*/
 /tmp/
+# 临时下载的 Actions 日志 / 产物解压目录（tmp_job.log、tmp_art9/ 这类）
+/tmp_*
 
 # Python
 __pycache__/
