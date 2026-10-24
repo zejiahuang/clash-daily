@@ -95,7 +95,7 @@ def build(
     delay_timeout_ms: int = 5000,
     delay_workers: int = 32,
     speed_url: str = SPEED_URL,
-    speed_bytes: int = 2_000_000,
+    speed_bytes: int = 6_000_000,
     speed_timeout: float = 10.0,
     speed_workers: int = 32,
     speed_max: int = 0,
