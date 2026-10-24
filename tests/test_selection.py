@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from clashhunter.builder import _stratified  # noqa: E402
+from clashhunter.builder import _shown_speed, _stratified  # noqa: E402
 
 
 def build_corpus(dominant: int, others: dict[str, int]) -> tuple[list[dict], dict[str, str]]:
@@ -81,6 +81,26 @@ def main() -> int:
     values = [p["v"] for p in out]
     if values != sorted(values):
         problems.append("输出没有按 key 排序")
+
+    # 7. 0 速度过滤必须按「显示值」判断，不能按原始值
+    #    背景：实测有一个节点原始速度 0.004 MB/S，原始值 > 0 能过过滤，
+    #    但名字会写成 `XX-01-0.0MB/S` —— 对使用者就是个坏节点。
+    cases = [
+        (0.0, 0.0, "真 0 必须被丢掉"),
+        (0.004, 0.0, "0.004 显示成 0.0，必须被丢掉"),
+        (0.049, 0.0, "0.049 显示成 0.0，必须被丢掉"),
+        (0.05, 0.1, "0.05 显示成 0.1，应保留"),
+        (1.04, 1.0, "1.04 显示成 1.0，应保留"),
+        (12.55, 12.6, "12.55 显示成 12.6"),
+    ]
+    for raw, want, why in cases:
+        got = _shown_speed(raw)
+        if abs(got - want) > 1e-9:
+            problems.append(f"_shown_speed({raw}) = {got}，应为 {want}（{why}）")
+    # 与节点名里的格式化必须一致
+    for raw in (0.0, 0.004, 0.05, 1.04, 12.55, 99.99):
+        if f"{raw:.1f}" != f"{_shown_speed(raw):.1f}":
+            problems.append(f"_shown_speed({raw}) 与名字里的 f'{raw:.1f}' 不一致")
 
     if problems:
         print(f"✗ {len(problems)} 处失败")
