@@ -44,10 +44,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--speed-bytes", type=int, default=2_000_000,
                         help="每个节点最多下载多少字节用于测速")
     parser.add_argument("--speed-timeout", type=float, default=10.0, help="单节点下载测速超时(秒)")
-    parser.add_argument("--speed-workers", type=int, default=16,
-                        help="下载测速并发（太高会互相抢带宽，测出来偏低）")
-    parser.add_argument("--speed-max", type=int, default=400,
-                        help="最多对多少个节点做下载测速（按延迟从快到慢取）")
+    parser.add_argument("--speed-workers", type=int, default=32,
+                        help="下载测速初筛并发（太高会互相抢带宽、测出来偏低，后面还有复测兜底）")
+    parser.add_argument("--speed-max", type=int, default=0,
+                        help="测速前最多保留多少个节点（0=不预采样，延迟可用的全部测速）")
+    parser.add_argument("--refine-top", type=int, default=300,
+                        help="对初筛最快的多少个做低并发复测（0=不复测）")
+    parser.add_argument("--refine-workers", type=int, default=16,
+                        help="复测并发（故意低于初筛，减少抢带宽造成的低估）")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
 
     parser.add_argument("--max-nodes", type=int, default=100, help="最终最多保留多少个节点")
@@ -89,6 +93,8 @@ def main(argv=None) -> int:
             speed_timeout=args.speed_timeout,
             speed_workers=args.speed_workers,
             speed_max=args.speed_max,
+            refine_top=args.refine_top,
+            refine_workers=args.refine_workers,
             ip_timeout=args.ip_timeout,
             max_nodes=args.max_nodes,
             top_per_country=args.top_per_country,
