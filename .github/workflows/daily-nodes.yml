@@ -29,11 +29,15 @@ on:
       apac_check_top:
         description: "经亚太节点当跳板复测最快的多少个（0=不做交叉验证）"
         required: false
-        default: "120"
+        default: "40"
       apac_check_workers:
-        description: "亚太复测并发（跳板带宽共享，别调高）"
+        description: "亚太复测并发（必须 1：跳板上行是共享的，并发会一起压平）"
         required: false
-        default: "4"
+        default: "1"
+      apac_min_hop:
+        description: "跳板直连速度低于此值就跳过交叉验证（MB/s）"
+        required: false
+        default: "8"
       speed_bytes:
         description: "每个节点下载多少字节用于测速（越小越快，但快节点会被分母下限截顶）"
         required: false
@@ -106,8 +110,9 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
           REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
-          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '120' }}
-          APAC_CHECK_WORKERS: ${{ inputs.apac_check_workers || '4' }}
+          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '40' }}
+          APAC_CHECK_WORKERS: ${{ inputs.apac_check_workers || '1' }}
+          APAC_MIN_HOP: ${{ inputs.apac_min_hop || '8' }}
           SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
           # 有个源站（freeclashverge）要读 GitHub trees API 才能定位最新日期的文件，
@@ -124,6 +129,7 @@ jobs:
             --refine-workers "$REFINE_WORKERS" \
             --apac-check-top "$APAC_CHECK_TOP" \
             --apac-check-workers "$APAC_CHECK_WORKERS" \
+            --apac-min-hop "$APAC_MIN_HOP" \
             --speed-bytes "$SPEED_BYTES" \
             --delay-timeout "$DELAY_TIMEOUT"
 
