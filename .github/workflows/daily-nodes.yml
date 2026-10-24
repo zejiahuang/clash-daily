@@ -26,6 +26,14 @@ on:
         description: "复测并发"
         required: false
         default: "16"
+      apac_check_top:
+        description: "经亚太节点当跳板复测最快的多少个（0=不做交叉验证）"
+        required: false
+        default: "120"
+      apac_check_workers:
+        description: "亚太复测并发（跳板带宽共享，别调高）"
+        required: false
+        default: "4"
       speed_bytes:
         description: "每个节点下载多少字节用于测速（越小越快，但快节点会被分母下限截顶）"
         required: false
@@ -82,11 +90,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 分层取样 / 源站适配器）
+      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 亚太复测 / 分层取样 / 源站适配器）
         run: |
           python tests/test_parsers.py
           python tests/test_bisect.py
           python tests/test_speed_math.py
+          python tests/test_apac.py
           python tests/test_selection.py
           python tests/test_sources.py
 
@@ -97,6 +106,8 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
           REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
+          APAC_CHECK_TOP: ${{ inputs.apac_check_top || '120' }}
+          APAC_CHECK_WORKERS: ${{ inputs.apac_check_workers || '4' }}
           SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
           # 有个源站（freeclashverge）要读 GitHub trees API 才能定位最新日期的文件，
@@ -111,6 +122,8 @@ jobs:
             --speed-workers "$SPEED_WORKERS" \
             --refine-top "$REFINE_TOP" \
             --refine-workers "$REFINE_WORKERS" \
+            --apac-check-top "$APAC_CHECK_TOP" \
+            --apac-check-workers "$APAC_CHECK_WORKERS" \
             --speed-bytes "$SPEED_BYTES" \
             --delay-timeout "$DELAY_TIMEOUT"
 
