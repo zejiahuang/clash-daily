@@ -62,6 +62,20 @@ def verify(path: Path) -> list[str]:
         if absent:
             problems.append(f"{len(absent)} 个节点不在「自动选择」组里：{sorted(absent)[:5]}")
 
+    # 全部 0.0 MB/S ⇒ 这份配置对使用者毫无意义。
+    # 2026-10-24 真发生过：CNB 上「下载测速可用 0/354」，产物 80 个节点全是 0.0，
+    # 而上面所有断言都通过了 —— 名字格式对、不重复、都在组里。
+    # 「自洽」不等于「有用」，所以这里必须有一条关于数值本身的断言。
+    speeds = []
+    for name in names:
+        match = NAME_PATTERN.match(name)
+        if match:
+            speeds.append(float(match.group(2)))
+    if speeds and max(speeds) <= 0.0:
+        problems.append(
+            f"{len(speeds)} 个节点的速度全是 0.0 MB/S ⇒ 测速环节没有产出任何有效读数，"
+            "这份配置不该发布（查日志里「下载测速可用 x/y」和失败原因那几行）")
+
     return problems
 
 

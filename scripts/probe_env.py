@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import time
 import urllib.error
@@ -172,6 +173,37 @@ def _probe_source(url: str) -> dict:
     return probe(url, limit=2048)
 
 
+def system_info() -> dict:
+    """容器本身的限制。为什么要看这个：354 个节点全部「可用 0」时，
+    除了「带宽不够」还有一种解释是 mihomo 根本没起来（FD 用完 / 内存被杀），
+    两者的修法完全不同，而这两个数一眼就能分开。
+    """
+    out: dict = {}
+    try:
+        out["nproc"] = len(os.sched_getaffinity(0))  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        out["nproc"] = os.cpu_count()
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        out["nofile"] = [soft, hard]
+    except Exception as exc:  # noqa: BLE001
+        out["nofile"] = f"{type(exc).__name__}: {exc}"
+    for key, path in (("mem_total_kb", "/proc/meminfo"),
+                      ("cgroup_mem_max", "/sys/fs/cgroup/memory.max"),
+                      ("cgroup_mem_max_v1", "/sys/fs/cgroup/memory/memory.limit_in_bytes")):
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+            if key == "mem_total_kb":
+                match = re.search(r"MemTotal:\s+(\d+) kB", text)
+                out[key] = int(match.group(1)) if match else None
+            else:
+                out[key] = text.strip()
+        except Exception:  # noqa: BLE001
+            out[key] = None
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="CNB runner 环境自检")
     ap.add_argument("--out", default="dist/probe.json")
@@ -180,6 +212,7 @@ def main() -> int:
     started = time.monotonic()
     report: dict = {
         "generated_at": datetime.now(TZ).isoformat(timespec="seconds"),
+        "system": system_info(),
         "egress": egress(),
         "github": github_checks(),
         "kernel": kernel_checks(),
@@ -203,6 +236,11 @@ def main() -> int:
             print(f"  {mark} {row['status'] or '-':>4} {row['ms'] or 0:>6}ms  "
                   f"{row['url']}\n            {extra}")
 
+    sysinfo = report["system"]
+    print(f"容器：{sysinfo.get('nproc')} 核，"
+          f"nofile={sysinfo.get('nofile')}，"
+          f"内存上限={sysinfo.get('cgroup_mem_max') or sysinfo.get('cgroup_mem_max_v1')}"
+          f"（MemTotal {sysinfo.get('mem_total_kb')} kB）")
     geo = report["egress"].get("geo") or {}
     print(f"出口 IP: {report['egress']['ip']}  "
           f"{geo.get('country') or ''}{geo.get('city') or ''} {geo.get('isp') or ''}")

@@ -460,7 +460,11 @@ class Mihomo:
         )
 
     def exit_ip(self, port: int, timeout: float = 6.0) -> str | None:
-        for url in ("http://api.ipify.org", "http://icanhazip.com"):
+        # 多备几个：CNB 的 runner 上 `api.ipify.org` 直接 Connection refused
+        # （实测 2026-10-24），只留 ipify + icanhazip 时出口 IP 会 100% 探测失败，
+        # 于是所有节点的国家都退回「按服务端 IP 猜」。
+        for url in ("http://api.ipify.org", "http://icanhazip.com",
+                    "http://ip-api.com/line/?fields=query", "http://ifconfig.me/ip"):
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": UA})
                 with self._opener(port).open(req, timeout=timeout) as resp:
@@ -473,6 +477,11 @@ class Mihomo:
 
     def measure_speed(self, port: int | None, url: str = SPEED_URL,
                       max_bytes: int = 6_000_000, timeout: float = 10.0) -> float:
+        return self.measure_speed_ex(port, url, max_bytes, timeout)[0]
+
+    def measure_speed_ex(self, port: int | None, url: str = SPEED_URL,
+                         max_bytes: int = 6_000_000,
+                         timeout: float = 10.0) -> tuple[float, str | None]:
         """下载一段固定大小的数据，返回**平均**速度（MB/s）。失败返回 0。
 
         `port is None` 表示**直连**（不走任何代理）。这一路只用来做测速源的容量自检：
@@ -487,6 +496,11 @@ class Mihomo:
         分母下限取 0.05 s：极快的节点可能在两三个 chunk 内就把数据收完，
         真实跨度只有几毫秒，不设下限会除出几十上百 MB/s 的假数字。
         ⚠️ 这个下限同时是**读数上限**：`max_bytes / 1048576 / 0.05`。见 _refine_speed。
+
+        ⚠️ 返回 `(速度, 失败原因)`，不是只返回速度。以前这里是 `except: pass`，
+           于是「354 个节点可用 0」在日志里只有一行 `可用 0/354`，分不清是
+           「连不上」「被拒」「读超时」还是「太慢没凑够 64 KB」—— 这四种的修法
+           完全不同，所以必须把原因带出来。
         """
         # URL 里的 {bytes} 必须跟着 max_bytes 走，否则「下够多少」和「服务器发多少」
         # 会对不上：服务器先 EOF，循环提前结束，改 max_bytes 等于没改。
@@ -499,6 +513,7 @@ class Mihomo:
         total = 0
         first_byte_at = 0.0
         last_byte_at = 0.0
+        err: str | None = None
         try:
             opener = self._opener(port) if port is not None else _direct_opener()
             with opener.open(req, timeout=timeout) as resp:
@@ -512,12 +527,15 @@ class Mihomo:
                         first_byte_at = last_byte_at
                     if last_byte_at - started > timeout:
                         break
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"
         if total < 65536 or not first_byte_at:
-            return 0.0
+            if err is None:
+                err = (f"只读到 {total} 字节（不足 64 KB）"
+                       f"{'，且已超时' if total else ''}")
+            return 0.0, err
         span = max(last_byte_at - first_byte_at, 0.05)
-        return (total / span) / 1048576
+        return (total / span) / 1048576, None
 
     def measure_sources(self, sources=SPEED_SOURCES, *, max_bytes: int = 24_000_000,
                         timeout: float = 10.0, log=None) -> list[dict]:
@@ -549,19 +567,25 @@ class Mihomo:
         再问一次纯属浪费）。
         """
         speeds: dict[str, float] = {}
+        errors: list[str] = []
         if sources:
             for label, url in sources:
-                value = self.measure_speed(port, url, speed_bytes, speed_timeout)
+                value, err = self.measure_speed_ex(port, url, speed_bytes, speed_timeout)
                 if value > 0:
                     speeds[label] = value
+                elif err:
+                    errors.append(f"{label}: {err}")
             speed = _median(list(speeds.values()))
         else:
-            speed = self.measure_speed(port, speed_url, speed_bytes, speed_timeout)
+            speed, err = self.measure_speed_ex(port, speed_url, speed_bytes, speed_timeout)
+            if speed <= 0 and err:
+                errors.append(err)
 
         exit_ip = None
         if speed > 0 and ip_timeout > 0:
             exit_ip = self.exit_ip(port, ip_timeout)
-        return {"speed": speed, "speeds": speeds, "exit_ip": exit_ip}
+        return {"speed": speed, "speeds": speeds, "exit_ip": exit_ip,
+                "speed_err": errors[0] if errors else None}
 
     def probe_all(
         self,
@@ -616,12 +640,33 @@ class Mihomo:
                         name = futures[future]
                         try:
                             results[name] = future.result()
-                        except Exception:  # noqa: BLE001
-                            results[name] = {"speed": 0.0, "exit_ip": None}
+                        except Exception as exc:  # noqa: BLE001
+                            results[name] = {
+                                "speed": 0.0, "exit_ip": None,
+                                "speed_err": f"probe_one 抛异常: "
+                                             f"{type(exc).__name__}: {exc}",
+                            }
                         done += 1
                         if done % 25 == 0 or done == total:
                             alive = sum(1 for v in results.values() if v["speed"] > 0)
                             log(f"    ... {done}/{total}，可用 {alive}")
             finally:
                 self.stop()
+
+        # 全灭时把原因打出来。没有这一行，「可用 0/354」既可能是「节点全挂」，
+        # 也可能是「容器里 mihomo 没起来」「出口带宽太窄根本下不动」——
+        # 三者的修法完全不同，而日志里原来只有那一个 0。
+        ok = sum(1 for v in results.values() if v["speed"] > 0)
+        if ok * 2 < len(results):
+            counts: dict[str, int] = {}
+            for value in results.values():
+                reason = value.get("speed_err")
+                if reason:
+                    counts[reason] = counts.get(reason, 0) + 1
+            log(f"  ⚠️ 可用率只有 {ok}/{len(results)}，失败原因（按出现次数）：")
+            for reason, count in sorted(counts.items(), key=lambda kv: -kv[1])[:5]:
+                log(f"      {count:>4} 个  {reason}")
+            if not counts:
+                log("      没有记录到异常 —— 说明是「读到了但不到 64 KB」，"
+                    "即节点太慢或出口带宽不够")
         return results
