@@ -367,6 +367,12 @@ def discover(source: Source, *, max_articles: int = 3, log=print) -> tuple[list[
     return _fetch_articles(candidates, max_articles=max_articles, log=log)
 
 
+def _host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return (urlsplit(url).netloc or "").lower()
+
+
 def collect(
     *,
     only: set[str] | None = None,
@@ -383,7 +389,19 @@ def collect(
             urls, articles = discover(source, max_articles=max_articles, log=log)
             report.urls = urls
             report.articles = articles
+
+            # 同一主机一旦失败就不再试它剩下的地址。
+            # 依据：lancex 的 8 个订阅地址全在 node.lancex.net 上，该域整站 526
+            # （Cloudflare 源站证书无效），逐个重试只是把同一条错误打 8 遍、
+            # 每遍还带 3 次重试 —— 白白多等几十秒，日志也被淹掉。
+            dead_hosts: set[str] = set()
+            failures: list[tuple[str, str]] = []
+
             for url in urls:
+                host = _host_of(url)
+                if host in dead_hosts:
+                    report.skipped += 1
+                    continue
                 try:
                     if url.startswith(("vless://", "vmess://", "trojan://", "ss://")):
                         parsed = _from_uris([url], source.sid)
@@ -392,7 +410,18 @@ def collect(
                         parsed = parse_subscription(text, source.sid)
                     report.proxies.extend(parsed)
                 except FetchError as exc:
-                    log(f"    [warn] 订阅下载失败 {url}: {exc}")
+                    failures.append((url, str(exc)))
+                    if host:
+                        dead_hosts.add(host)
+
+            if failures:
+                for _, message in failures[:3]:
+                    log(f"    [warn] 订阅下载失败 {message}")
+                if len(failures) > 3:
+                    log(f"    [warn] ……另有 {len(failures) - 3} 个地址失败")
+            if report.skipped:
+                log(f"    [warn] 同一主机的其余 {report.skipped} 个地址本次跳过"
+                    f"（{', '.join(sorted(dead_hosts))} 已判为不可用）")
 
             # 本源产出为空时才用兜底地址（TG-NAV 自身产出长期为空，见模块 docstring）
             if not report.proxies and source.fallback:
@@ -412,7 +441,9 @@ def collect(
             # 一种是真的没找到订阅地址，一种是地址找到了但一个都下不下来（lancex 目前就是后者）。
             if not report.proxies and not report.note:
                 if report.urls:
-                    report.note = f"找到 {len(report.urls)} 个订阅地址但全部下载失败"
+                    where = ", ".join(sorted(dead_hosts)) or "未知主机"
+                    report.note = (f"{len(report.urls)} 个订阅地址全部下载失败"
+                                   f"（{where} 不可用）")
                 else:
                     report.note = "没找到任何订阅地址"
 
