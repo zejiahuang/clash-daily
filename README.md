@@ -349,3 +349,63 @@ ATOM_TOKEN=<你的 AtomGit 个人访问令牌> python .local-tools/sync_atomgit.
 脚本逐文件比对内容（`GET /contents/{path}` 拿 sha + base64 内容），只传有变化的，
 并把 `dist/` 里的最新产物一并带上。注意 AtomGit 的认证头是 **`PRIVATE-TOKEN`**
 （`Authorization: token xxx` 会 401，`Authorization: Bearer xxx` 也行）。
+
+---
+
+## 十、在 AtomGit 跑 CI（为了「中国大陆视角」测速）
+
+GitHub 托管 runner 在美东，测出来是美东视角。AtomGit 的 runner 在国内，
+所以**真正值得在 AtomGit 跑的是测速那一步**，产物再推回 GitHub（因为 AtomGit 不能当直链）。
+
+### 配置路径与语法（实测，不是猜的）
+
+| 项 | 值 |
+|---|---|
+| 配置文件目录 | **`.gitcode/workflows/*.yml`**（不是 `.atomgit/workflows/`，也不是 `.github/workflows/`） |
+| 托管 runner | `runs-on: default` == `[ubuntu-latest, x64, small]`（2 核 8 GB） |
+| 可选规格 | `slim`(1C4G) / `small`(2C8G) / `medium`(4C16G) / `large`(8C32G) / `xlarge`(16C64G) / `2xlarge`(32C128G) |
+| 标签写法 | 三段式 `[os, arch, flavor]`，如 `[ubuntu-latest, x64, medium]`；`arch` 可为 `arm64` |
+| 预装 | Python 3.x、Node 18/20、Go 1.21+、Java 11/17/21、make/cmake/mvn/gradle/pip、git |
+| 定时 | `on.schedule[].cron`，**POSIX cron，UTC 时间**，最短间隔 5 分钟 |
+| 手动 | `on.workflow_dispatch` + `inputs`（支持 string/boolean/choice/number） |
+| 检出代码 | `uses: checkout`（裸 action 名，不是 `actions/checkout@v4`） |
+| 上下文 | `${{ atomgit.sha }}` / `${{ atomgit.event... }}`；环境变量 `ATOMGIT_*` |
+| Secrets / Variables | `${{ secrets.X }}` / `${{ vars.X }}`，在仓库设置里配 |
+
+> ⚠️ **前提：流水线是内测名额制**。官方文档「快速开始」第一行写着
+> 「申请获取代码化流水线内测名额（内测名额有限，详情请咨询 AtomGit 客服）」。
+> 没拿到名额的话，`.gitcode/workflows/` 里的文件**不会被识别**，仓库的「流水线」标签页也不会有记录。
+
+### 两步走
+
+**第一步：探测（`.gitcode/workflows/probe-runner.yml`）**
+
+这一步必须先跑，因为它决定方案成不成立：
+
+- runner 的出口 IP 与归属地 → 确认是不是国内视角
+- **能不能访问 `api.github.com`** → 不能的话，产物根本推不回 GitHub，
+  而 AtomGit 自己又不能当直链 ⇒ 整个方案作废
+- 能不能下载 mihomo、能不能访问 10 个源站和测速端点
+
+触发方式：推送这个文件本身（`paths` 过滤），或手动 `workflow_dispatch`。
+
+**第二步：每日流水线（`.gitcode/workflows/daily-nodes.yml`）**
+
+跑完 `main.py` 后调 `scripts/push_to_github.py` 把 `dist/` 写回 GitHub。需要两个配置：
+
+| 类型 | 名称 | 值 |
+|---|---|---|
+| Secret | `GH_TOKEN` | 一个有 `repo` 权限的 GitHub 令牌 |
+| Variable | `GITHUB_REPO` | `zejiahuang/clash-daily` |
+
+**两者缺任一不会让流水线失败** —— `push_to_github.py` 会打印「跳过」并返回 0，
+产物仍留在 AtomGit 仓库的 `dist/` 里（能看，不能订阅）。
+
+### ⚠️ 两个 cron 会互相覆盖
+
+GitHub 的 `daily-nodes.yml` 也是 UTC 18:00。如果 AtomGit 这边跑通了，
+**必须把 GitHub 那个的 `schedule` 注释掉**（保留 `workflow_dispatch` 作兜底），
+否则两边同时间各跑一次，谁后提交谁覆盖，测速视角会在「美东」和「国内」之间随机跳。
+
+`scripts/push_to_github.py` 的提交信息带「AtomGit 测速结果」前缀，
+`git log --oneline dist/` 能看出最后一次是谁写的。
