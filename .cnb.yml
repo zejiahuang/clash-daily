@@ -160,6 +160,17 @@ main:
       docker:
         image: python:3.11
       stages:
+        # ⚠️ 单元测试放这里，不只是为了「早发现」：正式那轮的第二个阶段就是
+        #    单元测试，它一红整轮就停 —— 而那时已经等到凌晨 2 点了，日志还看不到。
+        #    放在 push 里，改完代码当场就知道。耗时约 40 秒。
+        - name: 单元测试
+          script: |
+            set -e
+            for f in tests/test_*.py; do
+              echo "--- $f"
+              python "$f"
+            done
+
         - name: 环境自检
           script: |
             set -e
