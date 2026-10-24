@@ -1,7 +1,6 @@
 name: 每日节点聚合
 
 # 北京时间 02:00 == UTC 18:00（前一天）。
-# 注意：GitHub 的定时任务在高峰期可能延迟几分钟到几十分钟，这属正常现象。
 on:
   schedule:
     - cron: "0 18 * * *"
@@ -16,7 +15,7 @@ on:
         required: false
         default: "400"
       speed_workers:
-        description: "下载测速并发（太高会互相抢带宽）"
+        description: "下载测速并发"
         required: false
         default: "16"
       delay_timeout:
@@ -24,7 +23,6 @@ on:
         required: false
         default: "5000"
 
-# 提交 dist/ 需要写权限；用仓库自带的 GITHUB_TOKEN 就够，不需要额外 PAT。
 permissions:
   contents: write
 
@@ -34,12 +32,32 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
+    # ⚠️ 测速视角取决于 runner 所在地。
+    #   - 仓库变量 RUNNER_LABEL 未设置 → ubuntu-latest（GitHub 托管，通常在美西）
+    #   - 想「从中国大陆附近测速」→ 在亚太机器上装 self-hosted runner，
+    #     并把仓库变量 RUNNER_LABEL 设为该 runner 的标签（如 asia）
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 60
 
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
+
+      - name: 记录测速机位置（决定测速视角）
+        run: |
+          set -e
+          echo "runner label: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}"
+          IP=$(curl -s --max-time 10 https://api.ipify.org || echo "")
+          echo "runner egress ip: $IP"
+          if [ -n "$IP" ]; then
+            GEO=$(curl -s --max-time 10 "http://ip-api.com/json/$IP?fields=status,country,countryCode,regionName,city,isp" || echo "{}")
+            echo "runner geo: $GEO"
+            echo "$GEO" > runner-geo.json
+            mkdir -p dist
+            cp runner-geo.json dist/runner-geo.json
+          else
+            echo "::warning::拿不到 runner 出口 IP，无法确认测速视角"
+          fi
 
       - name: 准备 Python
         uses: actions/setup-python@v5
@@ -52,12 +70,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 单元测试（解析器 + 二分定位）
+      - name: 单元测试（解析器 / 二分定位 / 分层取样）
         run: |
           python tests/test_parsers.py
           python tests/test_bisect.py
+          python tests/test_selection.py
 
-      - name: 采集 · 测速 · 生成订阅
+      - name: 采集 · 测速 · 生成配置
         env:
           MAX_NODES: ${{ inputs.max_nodes || '300' }}
           SPEED_MAX: ${{ inputs.speed_max || '400' }}
@@ -80,14 +99,14 @@ jobs:
 
           doc = yaml.safe_load(pathlib.Path("dist/clash.yaml").read_text(encoding="utf-8"))
           proxies = doc.get("proxies") or []
-          assert proxies, "订阅里没有节点"
+          assert proxies, "配置里没有节点"
 
           names = [p["name"] for p in proxies]
           assert len(names) == len(set(names)), "节点名有重复，Clash 会拒绝加载"
 
           pattern = re.compile(r"^.+-(\d{2,})-(\d+\.\d)MB/S$")
           bad = [n for n in names if not pattern.match(n)]
-          assert not bad, f"有 {len(bad)} 个节点名不符合「国家-序号-速度MB/S」格式: {bad[:5]}"
+          assert not bad, f"{len(bad)} 个节点名不符合「国家-序号-速度MB/S」格式: {bad[:5]}"
 
           for p in proxies:
               assert p.get("server") and p.get("port"), f"节点缺字段: {p}"
@@ -97,10 +116,10 @@ jobs:
           assert set(names) <= set(groups["自动选择"]["proxies"])
 
           speeds = sorted((float(pattern.match(n).group(2)) for n in names), reverse=True)
-          print(f"校验通过：{len(proxies)} 个节点，命名格式正确，最快 {speeds[0]} MB/S")
+          print(f"校验通过：{len(proxies)} 个节点，最快 {speeds[0]} MB/S")
           PY
 
-      - name: 保存产物（即使推送失败也能下载）
+      - name: 保存产物
         uses: actions/upload-artifact@v4
         with:
           name: clash-subscription-${{ github.run_number }}
