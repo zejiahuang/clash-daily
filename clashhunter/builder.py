@@ -101,8 +101,9 @@ def build(
     speed_max: int = 0,
     refine_top: int = 300,
     refine_workers: int = 16,
-    apac_check_top: int = 120,
-    apac_check_workers: int = 4,
+    apac_check_top: int = 40,
+    apac_check_workers: int = 1,
+    apac_min_hop: float = 8.0,
     ip_timeout: float = 6.0,
     max_nodes: int = 80,
     country_share: float = 0.2,
@@ -274,6 +275,7 @@ def build(
         apac = _apac_check(
             mh, candidates, probes, code_of,
             top=apac_check_top, workers=apac_check_workers,
+            min_hop=apac_min_hop,
             speed_url=speed_url, speed_bytes=speed_bytes,
             speed_timeout=speed_timeout, log=log,
         )
@@ -363,8 +365,8 @@ APAC_CODES = frozenset({
 
 def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
                 code_of: dict[str, str], *, top: int, workers: int,
-                speed_url: str, speed_bytes: int, speed_timeout: float,
-                log=print) -> dict[str, dict]:
+                min_hop: float, speed_url: str, speed_bytes: int,
+                speed_timeout: float, log=print) -> dict[str, dict]:
     """经一台亚太节点当跳板复测最快的 top 个，找出「美西快、亚太慢」的节点。
 
     为什么需要它：直连测速走的是「测速机 → 节点 → 目标站」，而中国用户走的是
@@ -372,11 +374,14 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
     从亚太看可能只有 0.5 MB/s —— 现有流程对此完全无感。
 
     ⚠️ 本轮**只记录、不剔除**。串联链路的速度取最慢的一段，而「本机 → 跳板」
-    这一段就在路径里 ⇒ 跳板自身速度就是天花板。在天花板摸清之前剔除会误杀。
+    这一段就在路径里 ⇒ 跳板自身速度就是天花板。
 
-    判据的可靠性：只有「亚太测值远低于天花板」时该测量才有分辨力。
-    测出 0.8 MB/s 而天花板 16 MB/s ⇒ 它从亚太看就是 0.8，可信。
-    测出 16 MB/s ⇒ 只能说「至少 16」，测不出更多。
+    ⚠️ **跳板的上行带宽才是真瓶颈，不是它的下载速度。** 数据流是
+    「目标节点 → 跳板 → 本机」，跳板要把收到的再上传一次。机场节点的上行普遍
+    远低于下行，实测 run #12：跳板直连 5.1 MB/s，但经它测 120 个节点，**没有一个
+    超过 1.0**，比值中位数 0.09 —— 全被链路本身压平，判据完全失效。
+    所以这里必须做两件事：并发压到 1（不能分摊那点上行），以及**分辨力自检**
+    （见下面的 `best_via / hop_speed`）。
     """
     pool = [
         p for p in candidates
@@ -388,8 +393,6 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
     pool.sort(key=lambda p: -_speed_of(p, probes))
     hop = pool[0]
     hop_speed = _speed_of(hop, probes)
-    log(f"  亚太跳板选 {hop['name']}（直连 {hop_speed:.1f} MB/s，"
-        f"候选池 {len(pool)} 台）—— 它的速度就是本轮天花板")
 
     sample = [
         p for p in sorted(candidates, key=lambda p: -_speed_of(p, probes))
@@ -397,11 +400,28 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
     ][:top]
     if not sample:
         return {}
-    log(f"  经跳板复测 {len(sample)} 个（并发 {workers}），"
+
+    # 跳板比被测样本还慢，这一轮注定测不出东西：拿 5 MB/s 的跳板去验证
+    # 一堆直连 20 MB/s 的节点，测出来的只会是跳板自己的上限。
+    fastest_direct = max(_speed_of(p, probes) for p in sample)
+    if hop_speed < min_hop:
+        log(f"  亚太跳板 {hop['name']} 只有 {hop_speed:.1f} MB/s，"
+            f"低于门槛 {min_hop:.1f} ⇒ 跳过交叉验证")
+        log(f"    理由：样本里最快的直连是 {fastest_direct:.1f} MB/s，"
+            f"跳板比它慢 {fastest_direct / max(hop_speed, 0.01):.0f} 倍，"
+            f"测出来只会是跳板自己的上限")
+        return {}
+    log(f"  亚太跳板选 {hop['name']}（直连 {hop_speed:.1f} MB/s，"
+        f"候选池 {len(pool)} 台）—— 它的上行带宽就是本轮天花板")
+
+    # 复测不需要 6 MB：经跳板的读数上限就是跳板速度，2 MB 足够，
+    # 而且不会撞 0.05s 分母下限（2 MB / 0.05s = 38 MB/s，远高于任何跳板天花板）。
+    check_bytes = min(speed_bytes, 2_000_000)
+    log(f"  经跳板复测 {len(sample)} 个（并发 {workers}，每个 {check_bytes / 1e6:.0f}MB），"
         f"用来识别「直连快但亚太慢」的节点")
     again = mh.probe_all(
         sample,
-        speed_url=speed_url, speed_bytes=speed_bytes,
+        speed_url=speed_url, speed_bytes=check_bytes,
         speed_timeout=speed_timeout, ip_timeout=0.0,
         workers=workers, hop=hop, log=log,
     )
@@ -409,12 +429,14 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
     ratios: list[float] = []
     ceiling_hits = 0
     false_pos: list[tuple[str, float, float]] = []
+    best_via = 0.0
     for proxy in sample:
         name = proxy["name"]
         direct = _speed_of(proxy, probes)
         via = float(again.get(name, {}).get("speed") or 0.0)
         if via <= 0 or direct <= 0:
             continue
+        best_via = max(best_via, via)
         ratios.append(via / direct)
         if via >= hop_speed * 0.9:
             ceiling_hits += 1
@@ -423,11 +445,26 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
         if direct >= 3.0 and via < 1.0:
             false_pos.append((name, direct, via))
 
-    if ratios:
-        ratios.sort()
-        log(f"  亚太/直连 比值中位数 {ratios[len(ratios) // 2]:.2f}，"
-            f"{ceiling_hits}/{len(ratios)} 个撞到天花板"
-            f"（≥{hop_speed * 0.9:.1f} MB/s，这些的真实值测不出来）")
+    if not ratios:
+        log("  ⚠️ 经跳板一个都没测出速度，本轮无结论（跳板可能不可用）")
+        return again
+
+    ratios.sort()
+    log(f"  亚太/直连 比值中位数 {ratios[len(ratios) // 2]:.2f}，"
+        f"{ceiling_hits}/{len(ratios)} 个撞到天花板"
+        f"（≥{hop_speed * 0.9:.1f} MB/s，这些的真实值测不出来）")
+
+    # 分辨力自检：如果经跳板最快的那个都够不到天花板的一半，说明瓶颈在链路
+    # 本身（跳板上行 / 并发分摊），所有读数都被压平 ⇒ 不能拿它判假阳性。
+    # run #12 就是这样：跳板 5.1，最快只测到 1.0（比值 0.20），却报了 9 个「假阳性」。
+    if best_via < hop_speed * 0.5:
+        log(f"  ⚠️ 本轮无分辨力，不输出假阳性判断：经跳板最快只测到 "
+            f"{best_via:.1f} MB/s，而跳板直连 {hop_speed:.1f} MB/s"
+            f"（比值 {best_via / hop_speed:.2f} < 0.50）")
+        log("    说明瓶颈在链路本身（跳板上行带宽，或并发分摊），"
+            "读数被压平后无法区分「节点慢」和「链路慢」")
+        return again
+
     if false_pos:
         log(f"  ⚠️ 疑似假阳性 {len(false_pos)} 个"
             f"（直连 ≥3 但亚太 <1 MB/s，本轮只报告不剔除）：")
