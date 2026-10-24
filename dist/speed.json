@@ -1,0 +1,53 @@
+{
+ "run_id": "smoke-20261024T203642",
+ "finished_at": "2026-10-24 20:40:40 +0800",
+ "vantage": "美国·Cheyenne",
+ "host": "GitHub Actions 1000000225",
+ "speed_url": "https://speed.cloudflare.com/__down?bytes={bytes}",
+ "screen_bytes": 2000000,
+ "refine_bytes": 4000000,
+ "seconds": 7.9,
+ "stats": {
+  "total": 6,
+  "ok": 6,
+  "errors": []
+ },
+ "probes": {
+  "s0004": {
+   "speed": 23.3873868993685,
+   "speeds": {},
+   "exit_ip": "104.28.167.107",
+   "speed_err": null
+  },
+  "s0002": {
+   "speed": 22.211923502218514,
+   "speeds": {},
+   "exit_ip": "104.28.167.107",
+   "speed_err": null
+  },
+  "s0005": {
+   "speed": 21.442508486398722,
+   "speeds": {},
+   "exit_ip": "104.28.161.59",
+   "speed_err": null
+  },
+  "s0003": {
+   "speed": 22.125409696215094,
+   "speeds": {},
+   "exit_ip": "104.28.167.108",
+   "speed_err": null
+  },
+  "s0006": {
+   "speed": 23.696206805406618,
+   "speeds": {},
+   "exit_ip": "104.28.167.107",
+   "speed_err": null
+  },
+  "s0001": {
+   "speed": 20.079419356408096,
+   "speeds": {},
+   "exit_ip": "104.28.161.61",
+   "speed_err": null
+  }
+ }
+}
