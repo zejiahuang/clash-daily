@@ -33,6 +33,7 @@ class Stats:
     rejected: int = 0
     delay_ok: int = 0
     speed_ok: int = 0
+    merged_exit: int = 0
     accepted: int = 0
 
 
@@ -249,6 +250,12 @@ def build(
                 f"丢弃 {len(candidates) - len(measured)} 个显示为 0.0MB/S 的节点")
             candidates = measured
 
+    # 同一个出口只留最快的那个 —— 必须在分层取样之前做，
+    # 这样腾出来的名额才能被别的出口用上。
+    _before_merge = len(candidates)
+    candidates = _dedupe_by_exit(candidates, probes, log=log)
+    result.stats.merged_exit = _before_merge - len(candidates)
+
     code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
     if max_nodes > 0:
         candidates = _stratified(
@@ -315,6 +322,48 @@ def _shown_speed(speed: float) -> float:
     原始值 > 0 能过过滤，但名字写成 `XX-01-0.0MB/S` —— 对使用者就是个坏节点。
     """
     return float(f"{speed:.1f}")
+
+
+def _dedupe_by_exit(candidates: list[dict], probes: dict[str, dict], *, log=print) -> list[dict]:
+    """同一个出口 IP 只留最快的那一个。
+
+    为什么还需要这一步：`nodes.dedupe()` 的键是 (type, server, port, 凭证)，
+    所以「同一台服务器、同一个端口，只是凭证不同」的两条会被当成两个节点。
+    实测 run #7 的最终 100 个里，有 7 组共 14 条其实是同一个出口：
+
+        138.199.35.215:9002   美国-07(9.9)   / 美国-13(9.6)      ← 同 server:port
+        213.183.63.60:9028/85 保加利亚-01(2.8) / 保加利亚-02(2.6)  ← 同机不同端口
+        102.244.78.61:8086/84 喀麦隆-01(0.1)  / 喀麦隆-02(0.1)    ← 同机不同端口
+        185.135.86.175:9034/07 拉脱维亚-01(3.0) / 拉脱维亚-02(2.9)
+        103.86.116.118        印度尼西亚-01(2.5) / 印度尼西亚-02(1.6)
+        62.197.156.21         斯里兰卡-01(2.8) / 斯里兰卡-02(2.5)  ← 一台中继一台落地
+        103.86.49.57          泰国-01(3.9)   / 泰国-02(2.7)      ← 两条 CF 前置
+
+    同一个出口的带宽和故障是共享的，留两条等于把 100 个名额里的一个白扔。
+
+    没有出口 IP 时退到「同一个 server:port」—— 那也肯定是同一条管道。
+    实测 瑞士-01/瑞士-02 就是 116.204.164.17:7443 的两条，两条都没测出出口 IP，
+    不做这个兜底就会被当成两个节点留下来。
+    """
+    if not probes:
+        return candidates
+    best: dict[str, dict] = {}
+    for proxy in candidates:
+        exit_ip = probes.get(proxy["name"], {}).get("exit_ip")
+        if exit_ip:
+            key = f"exit:{exit_ip}"
+        else:
+            key = (f"endpoint:{proxy['type']}:"
+                   f"{str(proxy['server']).lower()}:{proxy['port']}")
+        current = best.get(key)
+        if current is None or _speed_of(proxy, probes) > _speed_of(current, probes):
+            best[key] = proxy
+    merged = list(best.values())
+    dropped = len(candidates) - len(merged)
+    if dropped:
+        log(f"  同一出口合并 {dropped} 个（{len(candidates)} → {len(merged)}，"
+            f"每个出口只留最快的一个）")
+    return merged
 
 
 def _rank(candidates: list[dict], probes: dict[str, dict]) -> list[dict]:
@@ -518,6 +567,7 @@ def _render_markdown(result: BuildResult) -> str:
         f"| 内核可加载 | {stats.loadable} |",
         f"| 延迟可用 | {stats.delay_ok} |",
         f"| 下载测速可用 | {stats.speed_ok} |",
+        f"| 同出口合并 | -{stats.merged_exit}（同一出口只留最快的那个） |",
         f"| 最终收录 | {stats.accepted} |",
         "",
         "## 地区分布",
