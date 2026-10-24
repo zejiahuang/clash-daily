@@ -430,6 +430,20 @@ def test_workflow_shape(problems: list[str]) -> None:
         problems.append("工作流没有用 run_id 判断「有没有新的一轮」，cron 每次都会白测一遍")
     if "report.json" not in scripts:
         problems.append("工作流没有等 CNB 收尾（report.json），复制产物会拿到上一轮的")
+    # ⚠️ 两种失败必须分开：`404` = 还没跑过一整轮（跳过，保持绿）；
+    #    「取不到」= cnb.cool 从 GitHub 不可达（必须红，否则永远安静地跳过）。
+    #    合在一起写就是一天 144 次红灯，或者永远绿的假象 —— 两种都比报错难查。
+    if '= "404"' not in scripts:
+        problems.append("gate 没把 404 当成「还没有新的一轮」—— 还没跑过一整轮时 "
+                        "cron 每 10 分钟红一次，一天 144 次，真出问题反而看不见")
+    if '!= "200"' not in scripts:
+        problems.append("gate 没把「取不到」和「没有新的一轮」分开 —— cnb.cool 从 "
+                        "GitHub 不可达时它会永远安静地跳过，一直是绿的")
+    gated = [s for s in cfg["jobs"]["speed"]["steps"]
+             if s.get("if") and "skip" in str(s.get("if"))]
+    if len(gated) < 3:
+        problems.append(f"只有 {len(gated)} 个步骤按 skip 短路 —— 空跑时不该装依赖、"
+                        f"不该测速、不该提交")
 
 
 # ---------------------------------------------------------------- E. 流水线顺序

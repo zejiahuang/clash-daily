@@ -46,10 +46,23 @@ jobs:
         id: gate
         run: |
           set -e
-          # 只读一次公开的 raw，不克隆、不装依赖 —— 空跑的成本压到十几秒
-          curl -fsS --max-time 30 \
+          # ⚠️ 404 必须当成「今天还没有新的一轮」而不是失败：cron 每 10 分钟一次，
+          #    一天 144 次；还没跑过一整轮时 candidates.json 根本不存在，若让
+          #    `curl -f` 直接失败，就是一天 144 次红灯 —— 之后真出问题也看不见。
+          #    但**网络失败不能当成 404**，否则 cnb.cool 从 GitHub 不可达时会永远
+          #    安静地「跳过」，看着一直是绿的。
+          code=$(curl -sS --max-time 30 -o /tmp/candidates.json -w '%{http_code}' \
             "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/candidates.json?t=$(date +%s)" \
-            -o /tmp/candidates.json
+            || echo 000)
+          if [ "$code" = "404" ]; then
+            echo "CNB 上还没有 dist/candidates.json（还没跑过一整轮）⇒ 跳过"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$code" != "200" ]; then
+            echo "取候选失败：HTTP $code —— 不是「没有新的一轮」，是取不到"
+            exit 1
+          fi
           python - <<'EOF'
           import json, os, pathlib
           cand = json.load(open("/tmp/candidates.json", encoding="utf-8"))

@@ -5,10 +5,12 @@
 
 ```
 CNB（中国大陆）    采集 → 去重 → TCP 预筛 → 延迟测速（HTTPS 探测）→ candidates.json
-        ↓ 强推到 GitHub 的 ci-handoff 分支（push 就是触发器）
-GitHub runner      经每个节点下载 Cloudflare 测速文件 → speed.json
-        ↓ 提交回同一分支，CNB 轮询取回
-CNB（中国大陆）    出口地区识别 → 重命名 → 同出口去重 → 取 80 → 产出 → 复制一份到 GitHub
+        ↓ 提交到本仓库 main（公开可读，不需要任何令牌）
+GitHub runner      自己按 cron 来取，经每个节点下载 Cloudflare 测速文件 → speed.json
+        ↓ 提交回 GitHub 自己的 main
+CNB（中国大陆）    轮询 raw 取回（run_id 对得上才算）→ 出口地区识别 → 重命名
+                   → 同出口去重 → 取 80 → 产出 → 提交回 CNB
+        ↓ GitHub 侧等 report.json 的 run_id 对上，把产物复制一份回 GitHub
 ```
 
 - 节点名格式：`日本-01-12.5MB/S`、`美国-03-8.4MB/S`、`中国香港-02-25.1MB/S`
@@ -99,15 +101,31 @@ git push -u cnb main
 GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）和
 `.github/workflows/speedtest.yml`（测速工作流）。仓库是 public，Actions 不计费。
 
-### 2. 需要一个 GITHUB_TOKEN
+### 2. 不需要任何令牌（这一点是被逼出来的，不是偏好）
 
-CNB 仓库的「环境变量 / 密钥」里加一个 `GITHUB_TOKEN`（GitHub PAT，至少 `contents:write`）。
-它只做两件事：把候选推到 GitHub 的 `ci-handoff` 分支、把产物复制回 GitHub `main`。
+**CNB 仓库设置里没有「环境变量 / 密钥」这个入口**，所以「CNB 拿一个 GitHub PAT 推过去」
+这条路根本走不通。而且就算能填也不该填：这个仓库是**公开**的，写一个 PAT 进去等于把
+仓库写权限发给所有人；更实际的问题是 GitHub 的密钥扫描会把公开仓库里出现的 `ghp_`
+令牌**自动吊销** —— 那不是「不安全但能用」，是「过几小时就坏」。
 
-> ⚠️ 没有它时「交给 GitHub 测速」这一步会**明确失败**，不会悄悄降级成本机测速 ——
-> 降级之后产物看着正常，速度却全被 CNB 的 3~4 MB/s 压平，比失败更难发现。
-> 而「复制一份到 GitHub」那一步没有 token 时只打印一行、退出 0：主产物已经在 CNB 上，
-> 副本缺失不该让整轮变红。
+所以方向反过来：**GitHub 自己来取**。
+
+| 谁 | 怎么拿到对方的文件 | 用什么凭据 |
+|---|---|---|
+| GitHub → CNB | `curl` CNB 的公开 raw（`/-/git/raw/main/dist/...`） | 不需要 |
+| CNB → GitHub | `curl` `raw.githubusercontent.com` 的公开 raw | 不需要 |
+| 各自写自己的仓库 | `git push` 自己 | 平台自带的凭据 |
+
+代价是**触发变成 GitHub 侧的 cron 轮询**（每 10 分钟），所以一轮从「点了按钮就开始测速」
+变成「点了按钮，最多 10 分钟后开始测速」。换来的是全流程零密钥、没有任何可泄露的东西。
+
+> ⚠️ 实测（2026-10-24，CNB 的 `dist/probe.json`）：CNB → `raw.githubusercontent.com`
+> 是 **200 / 204 ms**，所以 `wait_speed.sh` 的轮询不需要任何镜像。
+> 反方向（GitHub runner → `cnb.cool`）没有实测过 —— 见下面那条。
+>
+> ⚠️ 工作流的 gate 必须把「404」和「取不到」分开：`404` = 今天还没有新的一轮（跳过、
+> 保持绿），其他状态 = 真的取不到（红）。合成一个的话，要么一天 144 次红灯，要么
+> cnb.cool 从 GitHub 不可达时永远安静地跳过。判据在 `tests/test_handoff.py`。
 
 ### 3. 三个入口
 
@@ -115,7 +133,7 @@ CNB 仓库的「环境变量 / 密钥」里加一个 `GITHUB_TOKEN`（GitHub PAT
 
 | 入口 | 触发方式 | 跑什么 | 耗时 |
 |---|---|---|---|
-| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~40 分钟 |
+| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~50 分钟（含最多 10 分钟的 cron 等待） |
 | `web_trigger_daily` | 分支详情页的「立即跑一轮」按钮 | 全流程，参数可填 | 同上 |
 | `push` | 每次推代码 | **只跑环境自检**，不测速 | 约 1 分钟 |
 
@@ -130,31 +148,38 @@ CNB 仓库的「环境变量 / 密钥」里加一个 `GITHUB_TOKEN`（GitHub PAT
 | 步骤 | 谁做 | 做了什么 |
 |---|---|---|
 | 1 | CNB | `main.py --stage delay` → `dist/candidates.json`（含 `run_id` 和测速参数） |
-| 2 | CNB | `scripts/handoff_github.sh`：把候选**强推**到 GitHub 的 `ci-handoff` 分支 |
-| 3 | GitHub | 该分支上的 `dist/candidates.json` 变化触发 `speedtest.yml`，经节点测速 |
-| 4 | GitHub | 把 `dist/speed.json` 提交回 `ci-handoff` |
-| 5 | CNB | 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配，落到 `dist/speed.json` |
-| 6 | CNB | `main.py --stage finish` → 国家判定、去重、重命名、出订阅 |
+| 2 | CNB | `scripts/ci_commit.sh` 把候选提交到**本仓库 main**（公开可读） |
+| 3 | GitHub | `speedtest.yml` 按 cron（每 10 分钟）读一次这个文件，`run_id` 是新的就开始测速 |
+| 4 | GitHub | `main.py --stage speed` → `dist/speed.json`，提交回 GitHub 自己的 main |
+| 5 | CNB | `scripts/wait_speed.sh` 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配 |
+| 6 | CNB | `main.py --stage finish` → 国家判定、去重、重命名、出订阅，提交回 CNB |
+| 7 | GitHub | 等 CNB 的 `report.json` 的 `run_id` 对上，把 5 个产物文件复制回 GitHub |
 
-为什么用「推分支」当触发器，而不是 GitHub API：`api.github.com` 从境内不一定通，
-而 `git push` 走的是同一个 github.com，还省掉一个令牌权限。**push 本身就是触发器。**
+为什么是 cron 轮询而不是「CNB 推过来触发」：见上面 §三.2 —— 没有令牌可用。
+`git push` 到 GitHub 需要写权限，而任何能写权限的东西放进公开仓库都会被吊销。
 
-> ⚠️ 分支名**不能带斜杠**（所以叫 `ci-handoff` 而不是 `ci/handoff`）：
-> `raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}` 遇到带斜杠的分支名
-> 靠「最长前缀匹配」猜，猜错就是 404 —— 而这边只表现为「一直等不到结果」。
->
 > ⚠️ **轮询必须比对 `run_id`，不能只看文件存在**。`speed.json` 是提交进仓库的文件，
 > 上一轮那份会一直在。只判存在的话，某轮 GitHub 没跑起来时会安静地读进**上一轮的速度**，
 > 产物看起来完全正常 —— 这正是本项目反复出现的那类缺陷：错的东西和正确的东西长得一样。
-> 判据在 `tests/test_handoff.py`（本地裸仓库 + 本地 HTTP 服务，不联网）。
+> 三个文件共用同一个 `run_id`：`candidates.json`（CNB 写）→ `speed.json`（GitHub 写）
+> → `report.json`（CNB 写）。判据在 `tests/test_handoff.py`（本地裸仓库 + 本地 HTTP
+> 服务，不联网）。
+>
+> ⚠️ **「发布候选」那一步必须带 `CI_FORCE=1`**：它紧跟在上一轮的产物提交之后，防自触发
+> 守卫的判据（上一提交是 `cnb-bot` 且只改 `dist/`）正好命中，于是候选永远发不出去、
+> GitHub 永远等不到、整轮卡死，而且**全程没有任何报错**。同时它的作者必须是 `ci@local`
+> 而不是 `cnb-bot`，否则最后那次真正的产物提交会被同一条守卫拦住。
 
 ### 5. 产物怎么回写
 
-最后两步：`scripts/ci_commit.sh`（回 CNB）→ `scripts/gh_push.sh`（复制到 GitHub）。
+CNB 这一侧只有一步：`scripts/ci_commit.sh`（提交回 CNB 自己的 main）。
+复制到 GitHub 由 **GitHub 侧自己做**（`speedtest.yml` 的最后一步，等 `report.json` 的
+`run_id` 对上后逐个 `curl` 回来再 `git push`）—— CNB 这边没有任何 GitHub 凭据。
 
 `ci_commit.sh`：`git add dist` → 有变化才提交 → **fetch + rebase 后** `git push`。
-默认凭据没有写权限时，脚本会退到 `https://cnb:${CNB_TOKEN}@...` 重试（同一套 rebase 逻辑），
-两个都失败就把 `CNB_*` 环境变量打出来（变量名猜错时只能靠这个定位）。
+默认凭据没有写权限时，脚本会退到 `https://cnb:${CNB_TOKEN}@...` 重试（同一套 rebase 逻辑，
+`CNB_TOKEN` 由 CNB 自己注入，仓库里没有可泄露的东西），两个都失败就把 `CNB_*` 环境变量
+打出来（变量名猜错时只能靠这个定位）。
 
 > ⚠️ **为什么推送前必须 rebase**：一轮构建十几分钟，这期间远端必然可能动 ——
 > 人手工推了代码，或者另一个流水线刚提交了产物。在旧基线上直接 push 会被拒
@@ -171,8 +196,9 @@ CNB 仓库的「环境变量 / 密钥」里加一个 `GITHUB_TOKEN`（GitHub PAT
 > 判据必须两条同时成立：只看作者会**静默误伤**（用 `cnb-bot` 邮箱提交代码也会被跳过，
 > 阶段照样显示成功）。
 >
-> ⚠️ 正因为这个守卫，`handoff_github.sh` 里那次交接提交的作者是 `ci@local` 而**不是**
-> `cnb-bot` —— 否则最后一轮 `ci_commit.sh` 会把整轮产物当成产物提交跳过。
+> ⚠️ 正因为这个守卫，「发布候选」那次交接提交的作者是 `ci@local` 而**不是**
+> `cnb-bot`，并且要带 `CI_FORCE=1` —— 否则候选会被守卫当成产物提交跳过，
+> 或者最后一轮 `ci_commit.sh` 把整轮产物当成产物提交跳过。
 
 ### 6. 看不到日志时怎么办
 
