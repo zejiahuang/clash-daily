@@ -20,7 +20,7 @@ on:
       max_nodes:
         description: '最终最多保留多少个节点'
         required: false
-        default: '100'
+        default: '80'
       speed_workers:
         description: '下载测速初筛并发'
         required: false
@@ -68,16 +68,17 @@ jobs:
           python3 -m pip install --upgrade pip -q || true
           python3 -m pip install -r requirements.txt -q
 
-      - name: 单元测试（解析器 / 二分定位 / 分层取样 / 源站适配器）
+      - name: 单元测试（解析器 / 二分定位 / 测速算式 / 分层取样 / 源站适配器）
         run: |
           python3 tests/test_parsers.py
           python3 tests/test_bisect.py
+          python3 tests/test_speed_math.py
           python3 tests/test_selection.py
           python3 tests/test_sources.py
 
       - name: 采集 · 测速 · 生成配置
         env:
-          MAX_NODES: ${{ inputs.max_nodes || '100' }}
+          MAX_NODES: ${{ inputs.max_nodes || '80' }}
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           SPEED_MAX: ${{ inputs.speed_max || '0' }}
         run: |
