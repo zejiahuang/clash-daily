@@ -106,12 +106,30 @@ def pinned_tag() -> str | None:
     return match.group(1) if match else None
 
 
+EGRESS_URLS = (
+    "https://api.ipify.org",
+    "http://icanhazip.com",
+    "http://ip-api.com/line/?fields=query",
+    "https://ifconfig.me/ip",
+    "http://ip.3322.net",
+)
+
+
 def egress() -> dict:
-    out: dict = {"ip": None, "geo": None}
-    try:
-        out["ip"] = _text("https://api.ipify.org").strip() or None
-    except Exception as exc:  # noqa: BLE001
-        out["err_ip"] = f"{type(exc).__name__}: {exc}"
+    """问「我是谁」。必须多备几个：CNB 上 api.ipify.org 直接 Connection refused
+    （实测 2026-10-24），只问它的话这一整块永远是 null，而它恰好是判断
+    「runner 到底在哪个国家」的唯一依据。
+    """
+    out: dict = {"ip": None, "geo": None, "tries": []}
+    for url in EGRESS_URLS:
+        try:
+            ip = _text(url).strip()
+            out["tries"].append({"url": url, "ip": ip})
+            if re.fullmatch(r"[0-9a-fA-F.:]{7,45}", ip):
+                out["ip"] = ip
+                break
+        except Exception as exc:  # noqa: BLE001
+            out["tries"].append({"url": url, "err": f"{type(exc).__name__}: {exc}"})
     if out["ip"]:
         try:
             out["geo"] = json.loads(_text(
