@@ -117,10 +117,38 @@ def build(
     top_per_country: int = 0,
     no_speedtest: bool = False,
     vantage: str = "",
+    stage: str = "all",
+    candidates_path: Path | None = None,
+    speed_path: Path | None = None,
     log=print,
 ) -> BuildResult:
+    """`stage` 决定跑哪一段，三段拼起来才是完整一轮：
+
+      - `all`   —— 全跑（本地调试用）。**下载测速在这台机器上做**。
+      - `delay` —— 只跑 1~4 步（采集 / 去重 / TCP / 延迟），把结果写成
+                   `candidates_path`（默认 `<out>/candidates.json`）后返回。
+      - `finish`—— 读 `candidates_path` + `speed_path`（GitHub 测完回传的
+                   `speed.json`），只跑第 6 步（国家判定、去重、重命名、出订阅）。
+
+    为什么拆开：延迟测速必须在**国内**跑（判据是「国内能不能连上」），
+    而下载测速受 CNB runner 出口 3~4 MB/s 的限制，读数天花板压得比节点本身还低。
+    拆成两段之后，延迟留在 CNB、下载测速交给 GitHub（出口宽得多），
+    两个判据各自在自己的机器上成立。代价是速度变成「GitHub runner → 节点」——
+    README 里写明了这个交换。
+    """
     started = time.time()
     result = BuildResult(vantage=vantage)
+    candidates_path = Path(candidates_path) if candidates_path else Path(out_dir) / "candidates.json"
+
+    # 0. finish 段：不采集、不测速，只把两边交来的东西合成产物 ---------------
+    if stage == "finish":
+        return _finish(
+            result, started=started,
+            candidates_path=candidates_path,
+            speed_path=Path(speed_path) if speed_path else None,
+            max_nodes=max_nodes, country_share=country_share,
+            top_per_country=top_per_country, log=log,
+        )
 
     # 1. 采集 -------------------------------------------------------------
     log("[1/6] 采集源站")
@@ -210,6 +238,50 @@ def build(
                 log(f"  全量测速 {len(candidates)} 个，覆盖 "
                     f"{len({pre_codes.get(p['name'], '??') for p in candidates})} 个地区"
                     f"（不预采样）")
+
+            # 4.5 delay 段到此为止：把候选交给下一段（GitHub 测速）------------
+            # 落盘的必须够 finish 段重建报告：候选本身（含凭据与延迟）、
+            # 服务端 IP 的国家预判、以及 1~4 步的计数。
+            if stage == "delay":
+                payload = {
+                    "run_id": _run_id(),
+                    "generated_at": datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S %z"),
+                    "vantage": vantage,
+                    "delay_url": delay_url,
+                    "stats": {
+                        "raw": result.stats.raw, "unique": result.stats.unique,
+                        "duplicates": result.stats.duplicates,
+                        "tcp_alive": result.stats.tcp_alive,
+                        "loadable": result.stats.loadable,
+                        "rejected": result.stats.rejected,
+                        "delay_ok": result.stats.delay_ok,
+                    },
+                    "sources": result.sources,
+                    "server_countries": pre_codes,
+                    # 测速参数跟着候选一起过去：按钮（.cnb/web_trigger.yml）上的
+                    # REFINE_TOP / SPEED_BYTES 之类是给人调的，而真正跑测速的是
+                    # GitHub 那边的机器 —— 不写进文件，这些参数就成了摆设。
+                    "knobs": {
+                        "speed_bytes": speed_bytes,
+                        "speed_workers": speed_workers,
+                        "speed_timeout": speed_timeout,
+                        "refine_top": refine_top,
+                        "refine_workers": refine_workers,
+                        "refine_bytes": refine_bytes,
+                        "ip_timeout": ip_timeout,
+                    },
+                    "candidates": [
+                        {**p, "delay": delays.get(p["name"])} for p in candidates
+                    ],
+                }
+                candidates_path.parent.mkdir(parents=True, exist_ok=True)
+                candidates_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+                result.generated_at = payload["generated_at"]
+                log(f"  候选已落盘：{candidates_path}（{len(candidates)} 个，"
+                    f"run_id={payload['run_id']}）")
+                log(f"  下一步由 GitHub 测速：读这个文件、经节点下载、回传 speed.json")
+                return result
 
             # 5. 管道自检 → 定初筛参数 → 下载测速 + 出口 IP ------------------
             log("[5/6] 出口管道自检与下载测速")
@@ -307,6 +379,32 @@ def build(
             mh.stop()
 
     # 6. 国家判定 + 重命名 -------------------------------------------------
+    return _finalize(
+        result, candidates, probes, delays=delays, pre_codes=pre_codes,
+        max_nodes=max_nodes, country_share=country_share,
+        top_per_country=top_per_country, started=started, log=log,
+    )
+
+
+def _run_id() -> str:
+    """本轮的标识，用来配对「CNB 发出去的候选」和「GitHub 回传的测速结果」。
+
+    没有它就会出现最坏的情况：GitHub 上一轮的 `speed.json` 还在仓库里，
+    CNB 这一轮读到的却是旧文件 —— 产物看着正常，速度全是上一轮节点的。
+    """
+    return datetime.now(CST).strftime("%Y%m%dT%H%M%S")
+
+
+def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dict], *,
+              delays: dict[str, int], pre_codes: dict[str, str], max_nodes: int,
+              country_share: float, top_per_country: int, started: float,
+              log=print) -> BuildResult:
+    """第 6 步：排名 → 剔掉 0 速 → 同出口去重 → 国家判定 → 分层取样 → 重命名。
+
+    单独抽出来是因为它**不测任何东西**：输入只有「候选」和「测速结果」，
+    所以 `all`（本机测完直接收尾）和 `finish`（GitHub 测完再收尾）走的是同一份代码。
+    分开写两份的话，两条路的产物迟早会不一样，而且不会有任何报错。
+    """
     log("[6/6] 国家判定与重命名")
     candidates = _rank(candidates, probes)
 
@@ -388,6 +486,75 @@ def build(
     log(f"  最终 {len(final)} 个节点，覆盖 {len(counters)} 个国家/地区，"
         f"耗时 {time.time() - started:.0f}s")
     return result
+
+
+def _finish(result: BuildResult, *, started: float, candidates_path: Path,
+            speed_path: Path | None, max_nodes: int, country_share: float,
+            top_per_country: int, log=print) -> BuildResult:
+    """`stage="finish"` 的入口：只读两个文件，不碰网络。
+
+    两个文件都必须存在 —— 缺 `speed.json` 就退回「延迟顺序」出产物，
+    那会生成一批名字里写着 0.0MB/S 的节点（使用者无法分辨「坏节点」和「没测到」）。
+    所以宁可这一步失败，让流水线红在明确的阶段上。
+    """
+    if not candidates_path.is_file():
+        raise SystemExit(f"找不到 {candidates_path} —— 延迟测速那一段没有产出候选")
+    payload = json.loads(candidates_path.read_text(encoding="utf-8"))
+    candidates = [dict(item) for item in payload.get("candidates") or []]
+    if not candidates:
+        raise SystemExit(f"{candidates_path} 里没有候选节点")
+
+    delays = {c["name"]: c["delay"] for c in candidates if c.get("delay") is not None}
+    pre_codes = dict(payload.get("server_countries") or {})
+    result.vantage = payload.get("vantage") or result.vantage
+    result.sources = payload.get("sources") or []
+    for key, value in (payload.get("stats") or {}).items():
+        if hasattr(result.stats, key):
+            setattr(result.stats, key, value)
+
+    probes, meta = _load_speed(speed_path, payload.get("run_id"), log=log)
+    result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
+    log(f"[finish] 候选 {len(candidates)} 个，GitHub 实测可用 {result.stats.speed_ok} 个")
+
+    # 两段在不同机器上跑，所以「测速位置」不再是一个地点。
+    # 只写延迟那台机器的位置会误导：名字里的速度是 GitHub runner 量出来的，
+    # 而 GitHub runner 在境外 —— 使用者会拿它当「国内→节点」的速度。
+    speed_vantage = str(meta.get("vantage") or "")
+    if speed_vantage:
+        result.vantage = (f"{result.vantage}（延迟）/ {speed_vantage}（速度）"
+                          if result.vantage else speed_vantage)
+
+    return _finalize(
+        result, candidates, probes, delays=delays, pre_codes=pre_codes,
+        max_nodes=max_nodes, country_share=country_share,
+        top_per_country=top_per_country, started=started, log=log,
+    )
+
+
+def _load_speed(path: Path | None, run_id: str | None, *,
+                log=print) -> tuple[dict[str, dict], dict]:
+    """读 GitHub 回传的 `speed.json`，返回 `({候选名: {speed, exit_ip, ...}}, 元信息)`。
+
+    ⚠️ **必须校验 run_id**。`speed.json` 和 `candidates.json` 一样是提交进仓库的文件，
+    上一轮那份会一直躺在那里。只判「文件存在」的话，某轮 GitHub 没跑起来时
+    这里会安静地读进**上一轮的速度**，产物看起来完全正常 —— 这正是本项目
+    反复出现的那类缺陷：错的东西和正确的东西长得一样。
+    """
+    if path is None or not Path(path).is_file():
+        raise SystemExit(f"找不到 GitHub 回传的 {path} —— 测速那一段没有结果")
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    got = str(data.get("run_id") or "")
+    if run_id and got != run_id:
+        raise SystemExit(
+            f"{path} 的 run_id={got!r} 与本轮 {run_id!r} 不一致 —— "
+            f"这是上一轮的结果，不能拿来用")
+    probes = {name: dict(item) for name, item in (data.get("probes") or {}).items()}
+    if not probes:
+        raise SystemExit(f"{path} 里没有任何测速结果")
+    host = data.get("vantage") or data.get("host") or "?"
+    log(f"[finish] 测速结果来自 {host}，{len(probes)} 条")
+    return probes, {"vantage": data.get("vantage") or "", "run_id": got,
+                    "seconds": data.get("seconds")}
 
 
 def _speed_of(proxy: dict, probes: dict[str, dict]) -> float:

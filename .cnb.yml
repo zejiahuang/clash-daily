@@ -1,7 +1,17 @@
-# CNB 流水线（cnb.cool）—— 本项目唯一的 CI，GitHub Actions 已全部迁走。
+# CNB 流水线（cnb.cool）—— 主体在这里跑，**下载测速借 GitHub 的机器**。
 #
-# 为什么在国内 runner 上跑：测速点必须和使用者在一起。之前在 GitHub runner
-# （美西）上，无论怎么设计都绕不过「测出来的速度是 美西→节点 的速度」。
+# 为什么这么分工：
+#   - **延迟测速必须在国内**：判据是「国内能不能连上这个节点」，换到境外测就是
+#     另一个问题。CNB runner（广州腾讯云）正好合适。
+#   - **下载测速必须换机器**：CNB runner 的出口只有 3~4 MB/s（实测，见 README），
+#     节点再快也读成 3~4。GitHub runner 的出口宽得多，读数才不会被测速机本身压住。
+#     代价：速度变成「GitHub runner → 节点」。两段的位置都会写进产物头部。
+#
+# 一轮的走向：
+#   采集 → 延迟测速（CNB）→ dist/candidates.json
+#        → 强推到 GitHub 的 ci-handoff 分支 → GitHub 工作流经节点测速
+#        → dist/speed.json 提交回该分支 → CNB 轮询拿回
+#        → 国家判定 / 去重 / 重命名（CNB）→ 提交回 CNB → 复制一份到 GitHub
 #
 # 三个入口：
 #   1. web_trigger_daily —— 分支详情页的「立即跑一轮」按钮，参数可填
@@ -17,6 +27,10 @@
 # ⚠️ 阶段列表用 YAML 锚点（&daily_stages / *daily_stages）只写一份。CNB 拿到的是
 #    标准 YAML，锚点在平台看到之前就已经展开。改完务必本地验一遍：
 #      python -c "import yaml;d=yaml.safe_load(open('.cnb.yml'));print(list(d['main']))"
+#
+# ⚠️ 需要一个 GITHUB_TOKEN 环境变量（CNB 仓库的「环境变量」里配，PAT，
+#    至少 contents:write）：用来把候选推到 GitHub、把产物复制回去。
+#    没有它时「交给 GitHub 测速」这一步会明确失败，不会悄悄降级成本机测速。
 
 main:
   # ---------- 入口 1：手动触发（按钮见 .cnb/web_trigger.yml）----------
@@ -39,7 +53,7 @@ main:
               python "$f"
             done
 
-        - name: 记录测速机位置
+        - name: 记录测速位置（延迟段）
           script: |
             # 失败不影响主流程：拿不到就只是产物头部少一行「测速位置」
             # ⚠️ 先删掉仓库里那份 —— 它是上一次运行的存档，不删的话
@@ -58,22 +72,44 @@ main:
               echo "拿不到 runner 出口 IP，本轮不写测速位置"
             fi
 
-        - name: 采集 · 测速 · 生成配置
+        - name: 采集 · 延迟测速
           script: |
+            # 只跑 1~4 步：采集 → 去重 → TCP 预筛 → 延迟测速（HTTPS 探测）。
+            # 产出 dist/candidates.json，里面是「过了 HTTPS 延迟」的候选。
+            # ⚠️ 下面那些 --speed-*/--refine-* 在这一步**不测速**，只是原样写进
+            #    candidates.json 的 knobs 字段 —— 真正用它们的是 GitHub 那台机器。
             set -e
-            python main.py \
+            python main.py --stage delay \
               --out dist \
               --work work \
-              --max-nodes "${MAX_NODES:-80}" \
               --speed-max "${SPEED_MAX:-0}" \
+              --delay-timeout "${DELAY_TIMEOUT:-5000}" \
+              --speed-bytes "${SPEED_BYTES:-6000000}" \
               --speed-workers "${SPEED_WORKERS:-32}" \
+              --speed-timeout "${SPEED_TIMEOUT:-10}" \
               --refine-top "${REFINE_TOP:-300}" \
               --refine-workers "${REFINE_WORKERS:-16}" \
               --refine-bytes "${REFINE_BYTES:-24000000}" \
-              --speed-sources "${SPEED_SOURCES:-3}" \
-              --source-min-ratio "${SOURCE_MIN_RATIO:-0.4}" \
-              --speed-bytes "${SPEED_BYTES:-6000000}" \
-              --delay-timeout "${DELAY_TIMEOUT:-5000}"
+              --ip-timeout "${IP_TIMEOUT:-6}"
+
+        - name: 交给 GitHub 测速
+          script: |
+            # 强推到 GitHub 的 ci-handoff 分支（这本身就是触发器），
+            # 然后轮询 dist/speed.json，直到 run_id 与本轮一致。
+            # 这一步失败就是失败：退回本机测速只会得到被 3~4 MB/s 压平的数字。
+            set -e
+            bash scripts/handoff_github.sh dist/candidates.json
+
+        - name: 合并 · 生成配置
+          script: |
+            # 只跑第 6 步：排名、剔掉 0 速、同出口去重、国家判定、分层取样、重命名。
+            set -e
+            python main.py --stage finish \
+              --out dist \
+              --speed-in dist/speed.json \
+              --max-nodes "${MAX_NODES:-80}" \
+              --country-share "${COUNTRY_SHARE:-0.2}" \
+              --top-per-country "${TOP_PER_COUNTRY:-0}"
 
         - name: 校验产物
           script: |
@@ -85,6 +121,12 @@ main:
           script: |
             bash scripts/ci_commit.sh \
               "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间"
+
+        - name: 复制一份到 GitHub
+          script: |
+            # 主产物已经在 CNB 上，这一步只是副本。没有 GITHUB_TOKEN 时它会
+            # 打印一行然后退出 0 —— 副本缺失不该让整轮变红。
+            bash scripts/gh_push.sh
 
   # ---------- 入口 2：每天北京时间 02:00 ----------
   "crontab: 0 2 * * *":

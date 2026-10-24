@@ -4,11 +4,17 @@
 # inputs 的键名就是流水线里的环境变量名，所以这里直接用 .cnb.yml 读的那几个名字。
 #
 # ⚠️ 只有仓库写权限的人能点这个按钮。
+#
+# ⚠️ 测速参数（SPEED_* / REFINE_*）是在**延迟阶段**读进来的，然后原样写进
+#    dist/candidates.json 的 knobs 字段 —— 真正跑下载测速的是 GitHub 那台机器，
+#    它从文件里读参数。所以在这里加一个输入，等于改 GitHub 侧的测速行为。
 
 branch:
   - buttons:
       - name: 立即跑一轮
-        description: 采集 → 测速 → 生成配置 → 提交回仓库。约 30~60 分钟，测速流量约 20 GB。
+        description: >-
+          CNB 采集 + 延迟测速 → GitHub 经节点测下载速度 → CNB 收尾出配置 →
+          提交回 CNB 并复制一份到 GitHub。约 20~40 分钟。
         event: web_trigger_daily
         isDefault: true
         inputs:
@@ -16,6 +22,10 @@ branch:
             name: 最终保留节点数
             type: input
             default: "80"
+          COUNTRY_SHARE:
+            name: 单国最多占比（0 = 不限制）
+            type: input
+            default: "0.2"
           REFINE_TOP:
             name: 复测最快的多少个（0 = 不复测）
             type: input
@@ -24,7 +34,19 @@ branch:
             name: 复测每节点下载字节数
             type: input
             default: "24000000"
-          SPEED_SOURCES:
-            name: 复测对几个源各测一遍取中位数（0 = 单源）
+          SPEED_WORKERS:
+            name: 初筛并发
             type: input
-            default: "3"
+            default: "32"
+          SPEED_BYTES:
+            name: 初筛每节点下载字节数
+            type: input
+            default: "6000000"
+          SPEED_MAX:
+            name: 延迟后最多留多少个进测速（0 = 全测）
+            type: input
+            default: "0"
+          DELAY_TIMEOUT:
+            name: 延迟测速超时（毫秒）
+            type: input
+            default: "5000"

@@ -4,14 +4,21 @@
 每次只保留 **80** 个节点，产出可直接导入 Clash Verge / Mihomo / ClashX Meta 的配置文件。
 
 ```
-采集 → 去重 → TCP 预筛 → 延迟测速 → 下载测速 → 出口地区识别 → 重命名 → 取 80 → 产出
+CNB（中国大陆）    采集 → 去重 → TCP 预筛 → 延迟测速（HTTPS 探测）→ candidates.json
+        ↓ 强推到 GitHub 的 ci-handoff 分支（push 就是触发器）
+GitHub runner      经每个节点下载 Cloudflare 测速文件 → speed.json
+        ↓ 提交回同一分支，CNB 轮询取回
+CNB（中国大陆）    出口地区识别 → 重命名 → 同出口去重 → 取 80 → 产出 → 复制一份到 GitHub
 ```
 
 - 节点名格式：`日本-01-12.5MB/S`、`美国-03-8.4MB/S`、`中国香港-02-25.1MB/S`
   - 地区取自**实测出口 IP**，不是源站标注的国旗
   - 速度是**实测平均下载速度**（不含握手时间，见 §5），不是源站宣称值
-- 部署在 **CNB（cnb.cool）**，runner 在中国大陆 —— 测速点就是使用者所在的位置。
-  每天北京时间 02:00 自动更新，产物提交回同一个仓库。
+- **两段测速跑在两台机器上**：延迟在 CNB（判据是「国内能不能连上」），
+  下载在 GitHub（CNB 的出口只有 3~4 MB/s，节点再快也读成 3~4）。
+  代价是速度变成「GitHub runner → 节点」，见 §二。
+- 部署在 **CNB（cnb.cool）**，每天北京时间 02:00 自动更新，产物提交回同一个仓库，
+  并复制一份到 GitHub。
 
 > 本项目仅用于网络协议与自动化运维的技术学习，不保证任何节点可用性，请遵守所在地法律法规。
 
@@ -39,29 +46,38 @@ https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/clash.base64.txt
 
 ## 二、测速视角（重要）
 
-**速度是「测速机 → 节点」的速度，不是「你 → 节点」的速度。**
+**速度是「测速机 → 节点」的速度，不是「你 → 节点」的速度。** 现在这句话要拆成两半：
 
-现在测速跑在 **CNB 的 runner（中国大陆）** 上，所以量出来的就是「国内 → 节点」。
-在此之前整条流水线跑在 GitHub 托管的 `ubuntu-latest`（美西），那时量到的是美西视角 ——
-§5 里所有带 run # 的历史数据都是美西视角下的读数，**换到 CNB 之后这些数字不再可比**，
-但当时得出的结论（分母地板、多源取中位数、单国上限……）与视角无关，仍然成立。
+| 测什么 | 在哪测 | 为什么 |
+|---|---|---|
+| 延迟（能不能用） | CNB runner（广州腾讯云） | 判据是「国内能不能连上这个节点」，换到境外测就是另一个问题 |
+| 下载速度（多快） | GitHub runner（Azure，境外） | CNB 的出口只有 3~4 MB/s，节点再快也读成 3~4（实测见 §5） |
 
-流水线有一个「记录测速机位置」阶段，把出口 IP 与归属地写进 `dist/runner-geo.json`，
-订阅文件头部也会带一行：
+所以节点名里的速度是 **GitHub runner → 节点**。这是**刻意的交换**：
+CNB 上量出来的数字全被自己的出口压平，分不出 5 MB/s 和 50 MB/s；
+GitHub 上量出来的数字有区分度，但视角在境外 —— 一个国内很快、境外一般的节点会被低估。
 
-```json
-{"status":"success","country":"United States","countryCode":"US",
- "regionName":"California","city":"San Jose","isp":"Microsoft Corporation"}
+订阅文件头部会把两个位置都写出来：
+
+```
+# 测速位置：中国·广东·广州（延迟）/ 美国·Boydton（速度）（该速度是这台机器到节点的实测值，不代表你所在网络的速度）
 ```
 
-（上面这份是当年美西 runner 的存档；现在应该是中国的城市。）
+> ⚠️ 只写延迟那台机器的位置会误导：使用者会以为名字里的速度是「国内 → 节点」。
+> 两段位置都由代码自己取，不写死 —— `candidates.json` 带 CNB 的位置，
+> `speed.json` 带 GitHub runner 的位置，收尾时拼在一起。
 
 ### 想换视角怎么办
 
-**换 runner 所在位置，不是改代码。** CNB 的托管 runner 在境内，这正是迁过来的原因；
-如果哪天要换成别的地区，只能在那边自建 runner —— 但要清楚代价：
-**那台机器的上行带宽会成为所有节点速度的天花板**（一台 100 Mbps 的 VPS 会让每个节点
-都测不出超过约 12 MB/s）。这是「拿速度上限换视角」，不是纯赚。
+**换 runner 所在位置，不是改代码。** 三段分工是「哪台机器适合测什么」的问题：
+
+- 延迟要国内 ⇒ CNB（或任何境内机器）
+- 下载要宽出口 ⇒ GitHub（或任何出口够宽的机器）
+
+要换就换执行下载测速的那台机器：改 `.github/workflows/speedtest.yml` 的 `runs-on`，
+或者换成自建 runner。**代价永远是「那台机器的上行带宽成为所有节点速度的天花板」**
+—— 一台 100 Mbps 的 VPS 会让每个节点都测不出超过约 12 MB/s。
+这是「拿速度上限换视角」，不是纯赚。
 
 > ⚠️ 历史教训：曾经试过两条「靠软件换视角」的路 ——
 > ① 在亚太机器上装 self-hosted runner（`RUNNER_LABEL=asia`，脚本已随 GitHub Actions 删除）；
@@ -71,7 +87,7 @@ https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/clash.base64.txt
 
 ---
 
-## 三、部署（CNB）
+## 三、部署（CNB + GitHub）
 
 ### 1. 推送代码
 
@@ -80,13 +96,26 @@ git remote add cnb https://cnb.cool/StriveGlory/clash-daily.git
 git push -u cnb main
 ```
 
-### 2. 三个入口
+GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）和
+`.github/workflows/speedtest.yml`（测速工作流）。仓库是 public，Actions 不计费。
+
+### 2. 需要一个 GITHUB_TOKEN
+
+CNB 仓库的「环境变量 / 密钥」里加一个 `GITHUB_TOKEN`（GitHub PAT，至少 `contents:write`）。
+它只做两件事：把候选推到 GitHub 的 `ci-handoff` 分支、把产物复制回 GitHub `main`。
+
+> ⚠️ 没有它时「交给 GitHub 测速」这一步会**明确失败**，不会悄悄降级成本机测速 ——
+> 降级之后产物看着正常，速度却全被 CNB 的 3~4 MB/s 压平，比失败更难发现。
+> 而「复制一份到 GitHub」那一步没有 token 时只打印一行、退出 0：主产物已经在 CNB 上，
+> 副本缺失不该让整轮变红。
+
+### 3. 三个入口
 
 `.cnb.yml` 里定义了三件事，**同一份阶段列表**（YAML 锚点，改一处就全改）：
 
 | 入口 | 触发方式 | 跑什么 | 耗时 |
 |---|---|---|---|
-| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 30~60 分钟 |
+| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~40 分钟 |
 | `web_trigger_daily` | 分支详情页的「立即跑一轮」按钮 | 全流程，参数可填 | 同上 |
 | `push` | 每次推代码 | **只跑环境自检**，不测速 | 约 1 分钟 |
 
@@ -96,12 +125,36 @@ git push -u cnb main
 > 但**容器本身仍是 UTC**，所以脚本里写日期必须显式 `TZ=Asia/Shanghai`。
 > 这两件事很容易混，混了的表现是提交信息里的时间差 8 小时。
 
-### 3. 产物怎么回写
+### 4. 两台机器之间怎么交接
 
-最后一步跑 `scripts/ci_commit.sh`：`git add dist` → 有变化才提交 →
-**fetch + rebase 后** `git push`。默认凭据没有写权限时，脚本会退到
-`https://cnb:${CNB_TOKEN}@...` 重试（同一套 rebase 逻辑），两个都失败就把
-`CNB_*` 环境变量打出来（变量名猜错时只能靠这个定位）。
+| 步骤 | 谁做 | 做了什么 |
+|---|---|---|
+| 1 | CNB | `main.py --stage delay` → `dist/candidates.json`（含 `run_id` 和测速参数） |
+| 2 | CNB | `scripts/handoff_github.sh`：把候选**强推**到 GitHub 的 `ci-handoff` 分支 |
+| 3 | GitHub | 该分支上的 `dist/candidates.json` 变化触发 `speedtest.yml`，经节点测速 |
+| 4 | GitHub | 把 `dist/speed.json` 提交回 `ci-handoff` |
+| 5 | CNB | 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配，落到 `dist/speed.json` |
+| 6 | CNB | `main.py --stage finish` → 国家判定、去重、重命名、出订阅 |
+
+为什么用「推分支」当触发器，而不是 GitHub API：`api.github.com` 从境内不一定通，
+而 `git push` 走的是同一个 github.com，还省掉一个令牌权限。**push 本身就是触发器。**
+
+> ⚠️ 分支名**不能带斜杠**（所以叫 `ci-handoff` 而不是 `ci/handoff`）：
+> `raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}` 遇到带斜杠的分支名
+> 靠「最长前缀匹配」猜，猜错就是 404 —— 而这边只表现为「一直等不到结果」。
+>
+> ⚠️ **轮询必须比对 `run_id`，不能只看文件存在**。`speed.json` 是提交进仓库的文件，
+> 上一轮那份会一直在。只判存在的话，某轮 GitHub 没跑起来时会安静地读进**上一轮的速度**，
+> 产物看起来完全正常 —— 这正是本项目反复出现的那类缺陷：错的东西和正确的东西长得一样。
+> 判据在 `tests/test_handoff.py`（本地裸仓库 + 本地 HTTP 服务，不联网）。
+
+### 5. 产物怎么回写
+
+最后两步：`scripts/ci_commit.sh`（回 CNB）→ `scripts/gh_push.sh`（复制到 GitHub）。
+
+`ci_commit.sh`：`git add dist` → 有变化才提交 → **fetch + rebase 后** `git push`。
+默认凭据没有写权限时，脚本会退到 `https://cnb:${CNB_TOKEN}@...` 重试（同一套 rebase 逻辑），
+两个都失败就把 `CNB_*` 环境变量打出来（变量名猜错时只能靠这个定位）。
 
 > ⚠️ **为什么推送前必须 rebase**：一轮构建十几分钟，这期间远端必然可能动 ——
 > 人手工推了代码，或者另一个流水线刚提交了产物。在旧基线上直接 push 会被拒
@@ -117,8 +170,11 @@ git push -u cnb main
 > 也就不会有第三次。**不要删那个判断**，删了就是无限循环。
 > 判据必须两条同时成立：只看作者会**静默误伤**（用 `cnb-bot` 邮箱提交代码也会被跳过，
 > 阶段照样显示成功）。
+>
+> ⚠️ 正因为这个守卫，`handoff_github.sh` 里那次交接提交的作者是 `ci@local` 而**不是**
+> `cnb-bot` —— 否则最后一轮 `ci_commit.sh` 会把整轮产物当成产物提交跳过。
 
-### 4. 看不到日志时怎么办
+### 6. 看不到日志时怎么办
 
 CNB 的构建日志是前端流式加载的（拉下来的 HTML 里没有日志正文），仓库令牌也读不到
 OpenAPI，所以「流水线红了」从外部往往只看到一个红的阶段名。
@@ -238,6 +294,14 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 > 第一件该做的事是问：A 和 B 测的是不是同一件事？
 
 ### 出口管道自检：并发和下载量由「管子有多粗」决定
+
+> ⚠️ **这一节只对 `--stage all`（本机一条龙）成立。** 线上跑的是两段式：
+> CNB 只做延迟、GitHub 只做下载测速，而 GitHub 的出口足够宽，不需要压并发
+> —— 那边**刻意不做管道自检**，因为直连读数会被误当成节点速度的一部分
+> （判据：`clashhunter/speedjob.py` 里没有 `measure_aggregate` /
+> `measure_sources` / `port=None` 的调用，`tests/test_handoff.py` 盯着这件事）。
+> 下面这些数字仍然是「CNB runner 出口只有 3~4 MB/s」这条结论的来源，
+> 也就是**为什么要把下载测速搬走**。
 
 `--speed-workers`（默认 32）和 `--speed-bytes`（默认 6 MB）现在都只是**上限**。
 第 ⑤ 步开始前会先量一次 runner 的出口，再按量到的数决定实际用多少：
@@ -536,9 +600,13 @@ python main.py --no-speedtest --max-nodes 80
 # 只跑某几个源（排查单个源站改版时用）
 python main.py --no-speedtest --sources nodetoolbox,clashsuburl
 
-# 完整跑一次（默认：32 并发 × 6 MB 只是**上限**，实际参数由管道自检决定；
-# 复测最快的 300 个 × 24 MB；管道 < 20 MB/s 时改成 1 并发 × 1 MB × 前 24 个）
+# 本机一条龙（测速也在这台机器上做，和线上不一样 —— 线上是两段分开跑的）
 python main.py --out dist --work work --max-nodes 80
+
+# 分开跑，复现线上的三段（本机没有 GitHub 那台机器，中间那段得自己在别的机器上跑）
+python main.py --stage delay  --out dist --work work          # 写 dist/candidates.json
+python main.py --stage speed  --in dist/candidates.json --out dist/speed.json --work work
+python main.py --stage finish --out dist --speed-in dist/speed.json --max-nodes 80
 
 # 想省时间就手动加时间上限（会在测速前按国家分层截断）
 python main.py --out dist --work work --max-nodes 80 --speed-max 400
@@ -558,7 +626,13 @@ python tests/test_refine.py
 python tests/test_selection.py
 python tests/test_sources.py
 python tests/test_web.py
+python tests/test_ci_commit.py
+python tests/test_handoff.py
 ```
+
+> ⚠️ `--stage all` 会跑管道自检（直连量这台机器的出口），`--stage speed` **不会** ——
+> 后者只准经节点测速。两条路都从 `clashhunter/` 里取代码，但用的入口不同：
+> 前者 `builder.build()`，后者 `speedjob.run()`。
 
 `.cnb.yml` 里用的是 `for f in tests/test_*.py`，**新增测试文件不用改流水线**。
 
