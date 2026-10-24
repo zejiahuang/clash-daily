@@ -9,9 +9,18 @@
 #
 # 一轮的走向：
 #   采集 → 延迟测速（CNB）→ dist/candidates.json
-#        → 强推到 GitHub 的 ci-handoff 分支 → GitHub 工作流经节点测速
-#        → dist/speed.json 提交回该分支 → CNB 轮询拿回
-#        → 国家判定 / 去重 / 重命名（CNB）→ 提交回 CNB → 复制一份到 GitHub
+#        → 提交到本仓库（公开可读）
+#        → GitHub 的 speedtest 工作流按 cron 来取，经节点测速，
+#          把 dist/speed.json 提交回它自己的仓库
+#        → CNB 轮询 GitHub 的公开 raw 取回（run_id 对得上才算）
+#        → 国家判定 / 去重 / 重命名（CNB）→ 提交回 CNB
+#        → GitHub 侧等 report.json 的 run_id 对上，再把产物复制一份回去
+#
+# ⚠️ **全程零密钥**。曾经想让 CNB 直接推到 GitHub，那需要一个 GitHub PAT ——
+#    但这个仓库是**公开**的：写进 .cnb.yml 等于把写权限发给所有人，而且 GitHub
+#    的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销**，过几小时就坏。
+#    所以方向反过来：GitHub 自己来取（读公开 raw），写也只写它自己的仓库。
+#    代价是触发变成 cron 轮询，延迟最多 10 分钟。
 #
 # 三个入口：
 #   1. web_trigger_daily —— 分支详情页的「立即跑一轮」按钮，参数可填
@@ -28,9 +37,8 @@
 #    标准 YAML，锚点在平台看到之前就已经展开。改完务必本地验一遍：
 #      python -c "import yaml;d=yaml.safe_load(open('.cnb.yml'));print(list(d['main']))"
 #
-# ⚠️ 需要一个 GITHUB_TOKEN 环境变量（CNB 仓库的「环境变量」里配，PAT，
-#    至少 contents:write）：用来把候选推到 GitHub、把产物复制回去。
-#    没有它时「交给 GitHub 测速」这一步会明确失败，不会悄悄降级成本机测速。
+# ⚠️ 这条流水线**不需要任何 GitHub 凭据**。要改 GitHub 那一侧的行为，
+#    去改 .github/workflows/speedtest.yml（它用的是 GitHub 自带的 GITHUB_TOKEN）。
 
 main:
   # ---------- 入口 1：手动触发（按钮见 .cnb/web_trigger.yml）----------
@@ -92,13 +100,26 @@ main:
               --refine-bytes "${REFINE_BYTES:-24000000}" \
               --ip-timeout "${IP_TIMEOUT:-6}"
 
-        - name: 交给 GitHub 测速
+        - name: 发布候选
           script: |
-            # 强推到 GitHub 的 ci-handoff 分支（这本身就是触发器），
-            # 然后轮询 dist/speed.json，直到 run_id 与本轮一致。
-            # 这一步失败就是失败：退回本机测速只会得到被 3~4 MB/s 压平的数字。
+            # 先把候选提交上去 —— GitHub 那边是**自己来取**这个公开文件的，
+            # 不提交它就永远看不到新一轮。
+            # ⚠️ CI_FORCE=1：这一步紧跟在上一轮的产物提交之后，按守卫的判据会被
+            #    当成产物提交跳过，于是候选永远发不出去。作者改成 ci@local，
+            #    最后那次真正的产物提交就不会再被守卫拦住。
             set -e
-            bash scripts/handoff_github.sh dist/candidates.json
+            RUN_ID=$(python -c "import json;print(json.load(open('dist/candidates.json'))['run_id'])")
+            echo "本轮 run_id=$RUN_ID"
+            CI_FORCE=1 CI_AUTHOR_NAME=clash-daily-ci CI_AUTHOR_EMAIL=ci@local \
+              bash scripts/ci_commit.sh "chore(handoff): 发布候选 ${RUN_ID}"
+
+        - name: 等 GitHub 测速
+          script: |
+            # 全程零密钥：这里只轮询 GitHub 的公开 raw，等 run_id 对上的 speed.json。
+            # GitHub 侧按 cron（每 10 分钟）读上面发布的 candidates.json，
+            # 发现新的 run_id 就开始测速，测完提交回它自己的仓库。
+            set -e
+            bash scripts/wait_speed.sh dist/candidates.json
 
         - name: 合并 · 生成配置
           script: |
@@ -119,14 +140,10 @@ main:
 
         - name: 提交回仓库
           script: |
+            # 复制一份到 GitHub 由 GitHub 侧的工作流自己做（它等 report.json 的
+            # run_id 对上后把产物取回去）—— CNB 这边没有任何 GitHub 凭据。
             bash scripts/ci_commit.sh \
               "chore(nodes): 更新 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间"
-
-        - name: 复制一份到 GitHub
-          script: |
-            # 主产物已经在 CNB 上，这一步只是副本。没有 GITHUB_TOKEN 时它会
-            # 打印一行然后退出 0 —— 副本缺失不该让整轮变红。
-            bash scripts/gh_push.sh
 
   # ---------- 入口 2：每天北京时间 02:00 ----------
   "crontab: 0 2 * * *":

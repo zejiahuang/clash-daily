@@ -1,27 +1,36 @@
-# 下载测速 —— 跑在 GitHub runner 上，结果回传给 CNB。
+# 下载测速 —— 跑在 GitHub runner 上，结果提交回本仓库；CNB 那边轮询取走。
 #
 # 为什么测速要单独放到这里：CNB runner 的出口只有 3~4 MB/s，节点再快也读成 3~4；
 # GitHub runner 的出口宽得多，读数才不会被测速机本身压住。
 # 代价是速度变成「GitHub runner → 节点」，所以 CNB 侧会把两个位置都写进产物头部。
 #
-# 触发方式：CNB 把 dist/candidates.json 强推到 ci-handoff 分支 ⇒ 本工作流启动。
-# ⚠️ 分支名**不能带斜杠**：raw.githubusercontent.com 的地址是
-#    /{owner}/{repo}/{branch}/{path}，分支名带斜杠时靠「最长前缀匹配」猜，
-#    猜错就是 404，而 CNB 那边只会表现为「一直等不到结果」。
+# 为什么是 cron 轮询而不是「CNB 推过来触发」：CNB 仓库是**公开**的，往公开仓库里
+# 写一个 GitHub PAT，等于把写权限发给所有人；而且 GitHub 的密钥扫描会把公开仓库
+# 里出现的 `ghp_` 令牌**自动吊销** —— 那种做法不是「不安全但能用」，是过几小时就坏。
+# 所以方向反过来：**GitHub 自己来取**，全程零密钥。
 #
-# ⚠️ paths 过滤只认 dist/candidates.json：本工作流自己提交的 dist/speed.json
-#    不在过滤里，所以不会自己触发自己。
+# 一轮的时序：
+#   CNB 跑完延迟测速 → 把 dist/candidates.json 提交上去（公开可读）
+#   → 本工作流（最多 10 分钟后）读到新的 run_id → 经节点测速
+#   → 把 dist/speed.json 提交回本仓库
+#   → 等 CNB 收尾（轮询 CNB 的 dist/report.json，run_id 对上）
+#   → 把最终产物复制一份到本仓库
+#
+# ⚠️ 判断「有没有新的一轮」只能比 run_id，不能看时间戳：cron 每 10 分钟跑一次，
+#    绝大多数时候什么都没变，没有这道门每次都要白测一遍。
 name: speedtest
 
 on:
-  push:
-    branches: [ci-handoff]
-    paths: ["dist/candidates.json"]
+  schedule:
+    # 每 10 分钟看一眼 CNB 有没有新候选。一天 144 次空跑，每次约 15 秒
+    # （空跑只做一次 curl，不装依赖、不测速）。公开仓库不计费。
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 concurrency:
-  group: speedtest-ci-handoff
-  cancel-in-progress: true
+  group: speedtest
+  # 不取消正在跑的那一轮：测速中途被杀会留下半截结果
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -29,83 +38,109 @@ permissions:
 jobs:
   speed:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ci-handoff
-          # 要往同一个分支提交回去，拿全历史最稳（默认 depth=1 也能推，但
-          # 一旦远端被别人改过就没有可 rebase 的基点）
-          fetch-depth: 0
+
+      - name: 看 CNB 上有没有新的一轮
+        id: gate
+        run: |
+          set -e
+          # 只读一次公开的 raw，不克隆、不装依赖 —— 空跑的成本压到十几秒
+          curl -fsS --max-time 30 \
+            "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/candidates.json?t=$(date +%s)" \
+            -o /tmp/candidates.json
+          python - <<'EOF'
+          import json, os, pathlib
+          cand = json.load(open("/tmp/candidates.json", encoding="utf-8"))
+          run_id = str(cand.get("run_id") or "")
+          done = ""
+          p = pathlib.Path("dist/speed.json")
+          if p.is_file():
+              done = str(json.loads(p.read_text(encoding="utf-8")).get("run_id") or "")
+          skip = "1" if (run_id and run_id == done) else "0"
+          print(f"候选 run_id={run_id or '(空)'}，已测过={done or '(无)'} ⇒ "
+                f"{'跳过' if skip == '1' else '开始测速'}")
+          print(f"候选 {len(cand.get('candidates') or [])} 个")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"run_id={run_id}\nskip={skip}\n")
+          EOF
 
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != '1'
         with:
           python-version: "3.11"
 
-      - name: 安装依赖
+      - name: 取 CNB 上的代码
+        if: steps.gate.outputs.skip != '1'
         run: |
           set -e
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 看看这一轮要测什么
-        run: |
-          set -e
-          python - <<'EOF'
-          import json
-          d = json.load(open("dist/candidates.json", encoding="utf-8"))
-          print("run_id:", d.get("run_id"))
-          print("延迟测速位置:", d.get("vantage") or "未知")
-          print("候选:", len(d.get("candidates") or []))
-          s = d.get("stats") or {}
-          print("上游计数:", {k: s.get(k) for k in ("raw", "unique", "tcp_alive", "delay_ok")})
-          EOF
+          # 代码从 CNB 取，不从本仓库取 —— 本仓库的 main 只是产物副本，
+          # 代码可能落后好几轮。跑旧代码测出来的结果看着一样正常，最难发现。
+          git clone --depth 1 https://cnb.cool/StriveGlory/clash-daily.git /tmp/cnb
+          git -C /tmp/cnb log -1 --format='CNB HEAD: %h %s'
+          pip install -r /tmp/cnb/requirements.txt
 
       - name: 下载测速（经节点，用 Cloudflare）
+        if: steps.gate.outputs.skip != '1'
         run: |
           set -e
+          cd /tmp/cnb
           # 并发 / 下载量 / 复测个数**不在这里传**：它们跟着 dist/candidates.json
           # 的 knobs 字段过来（源头是 CNB 按钮上的参数）。在这里再写一份就会
           # 出现「按钮改了但没生效」——两边各说各话。
           python main.py --stage speed \
             --in dist/candidates.json \
-            --speed-out dist/speed.json \
-            --work work
+            --speed-out /tmp/speed.json \
+            --work /tmp/work
 
-      - name: 结果摘要
-        if: always()
-        run: |
-          test -s dist/speed.json || { echo "没有 speed.json"; exit 0; }
-          python - <<'EOF'
-          import json
-          d = json.load(open("dist/speed.json", encoding="utf-8"))
-          s = d.get("stats") or {}
-          print(f"run_id={d.get('run_id')} 可用 {s.get('ok')}/{s.get('total')} "
-                f"耗时 {d.get('seconds')}s 位置 {d.get('vantage')}")
-          for item in s.get("errors") or []:
-              print(f"  {item['count']:>4} 个  {item['reason']}")
-          EOF
-
-      - name: 提交回 ci-handoff
-        if: always()
+      - name: 提交测速结果
+        if: steps.gate.outputs.skip != '1'
         run: |
           set -e
-          # 测速那一步挂了就不会有 speed.json —— 这时候**什么都不提交**。
-          # 提交一份空/旧结果会让 CNB 那边「看起来收到了」，产物却没有任何速度。
-          test -f dist/speed.json || { echo "没有 speed.json，不提交"; exit 0; }
+          cp /tmp/speed.json dist/speed.json
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add dist/speed.json
-          if git diff --cached --quiet; then
-            echo "dist/speed.json 没有变化，跳过提交"
+          git commit -m "chore(speed): $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 run_id=${{ steps.gate.outputs.run_id }}"
+          git push
+
+      - name: 等 CNB 收尾，再复制一份产物
+        if: steps.gate.outputs.skip != '1'
+        run: |
+          set -e
+          RUN_ID="${{ steps.gate.outputs.run_id }}"
+          echo "等 CNB 把这一轮收尾（run_id=$RUN_ID）"
+          ok=0
+          for i in $(seq 1 60); do
+            curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+              "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/report.json?t=$(date +%s)$i" \
+              -o /tmp/report.json 2>/dev/null || true
+            GOT=$(python - /tmp/report.json <<'EOF'
+          import json, sys
+          try:
+              print(json.load(open(sys.argv[1], encoding="utf-8")).get("run_id") or "")
+          except Exception:
+              print("")
+          EOF
+            )
+            if [ "$GOT" = "$RUN_ID" ]; then ok=1; break; fi
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "⚠️ 15 分钟内没等到 CNB 收尾 —— 这一轮不复制产物（下一轮会带上）"
             exit 0
           fi
-          git commit -m "chore(speed): $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间"
-          # 推送被拒只可能是「这期间 CNB 又强推了一轮」。rebase 一下再试一次；
-          # 还失败就让本 job 红 —— CNB 那边等不到 run_id 匹配的结果会明确报错，
-          # 比在这里悄悄吞掉强。
-          if git push; then exit 0; fi
-          echo "push 被拒，rebase 后重试"
-          git fetch origin ci-handoff
-          git rebase origin/ci-handoff || { git rebase --abort || true; exit 1; }
+          # CNB 只能读公开 raw，这里逐个取回来再提交到本仓库
+          for f in clash.yaml clash.base64.txt report.json report.md candidates.json; do
+            curl -fsS --max-time 30 \
+              "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/$f?t=$(date +%s)" \
+              -o "dist/$f"
+          done
+          git add dist
+          if git diff --cached --quiet; then
+            echo "产物没有变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore(nodes): 复制 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间的一轮产物"
           git push

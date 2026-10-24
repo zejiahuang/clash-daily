@@ -48,6 +48,10 @@ class BuildResult:
     sources: list[dict] = field(default_factory=list)
     countries: dict[str, int] = field(default_factory=dict)
     generated_at: str = ""
+    # 这一轮的标识。delay 段写进 candidates.json，finish 段读回来，
+    # 最后写进 report.json —— 三处同一个值，GitHub 那边才能判断
+    # 「CNB 的收尾跑完的是不是我刚测的那一轮」。
+    run_id: str = ""
     # 测速机所在位置。速度是「这台机器 → 节点」的实测值，换个地方测就是另一个数，
     # 所以必须写进订阅文件头部，否则使用者会把它当成自己那边的速度。
     vantage: str = ""
@@ -137,7 +141,7 @@ def build(
     README 里写明了这个交换。
     """
     started = time.time()
-    result = BuildResult(vantage=vantage)
+    result = BuildResult(vantage=vantage, run_id=_run_id())
     candidates_path = Path(candidates_path) if candidates_path else Path(out_dir) / "candidates.json"
 
     # 0. finish 段：不采集、不测速，只把两边交来的东西合成产物 ---------------
@@ -244,7 +248,7 @@ def build(
             # 服务端 IP 的国家预判、以及 1~4 步的计数。
             if stage == "delay":
                 payload = {
-                    "run_id": _run_id(),
+                    "run_id": result.run_id,
                     "generated_at": datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S %z"),
                     "vantage": vantage,
                     "delay_url": delay_url,
@@ -503,6 +507,9 @@ def _finish(result: BuildResult, *, started: float, candidates_path: Path,
     candidates = [dict(item) for item in payload.get("candidates") or []]
     if not candidates:
         raise SystemExit(f"{candidates_path} 里没有候选节点")
+    # run_id 一路传下去：report.json 里要写同一个值，GitHub 那边靠它判断
+    # 「CNB 的收尾跑完的是不是我刚测的那一轮」。
+    result.run_id = str(payload.get("run_id") or result.run_id)
 
     delays = {c["name"]: c["delay"] for c in candidates if c.get("delay") is not None}
     pre_codes = dict(payload.get("server_countries") or {})
@@ -1024,6 +1031,9 @@ def write_outputs(result: BuildResult, out_dir: Path, *, log=print) -> dict[str,
     paths["base64"] = b64_path
 
     report = {
+        # run_id 是「这一轮」的唯一标识：GitHub 那边的测速工作流靠它判断
+        # 「CNB 的收尾跑完了没有」，两边文件一对就配上了。
+        "run_id": result.run_id,
         "generated_at": result.generated_at,
         "stats": result.stats.__dict__,
         "countries": result.countries,

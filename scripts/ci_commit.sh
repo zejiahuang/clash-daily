@@ -21,7 +21,14 @@ if [ -z "$MSG" ]; then
 fi
 
 BOT_MAIL="cnb-bot@cnb.cool"
-if [ "$(git log -1 --format=%ae)" = "$BOT_MAIL" ]; then
+# ⚠️ CI_FORCE=1 会跳过下面这条守卫。只有「发布候选」那一步该用它 ——
+#    它是整轮的第一个提交，紧跟在上一轮的产物提交之后，按守卫的判据
+#    （上一提交是 cnb-bot 且只改 dist/）会被当成产物提交跳过，
+#    结果就是候选永远发不出去、GitHub 永远等不到、整轮卡死。
+#    它自己不会引起循环：作者是 ci@local，不是 cnb-bot。
+if [ -n "${CI_FORCE:-}" ]; then
+  echo "CI_FORCE=1 ⇒ 跳过防自触发守卫（这一步不是产物提交）"
+elif [ "$(git log -1 --format=%ae)" = "$BOT_MAIL" ]; then
   # 非 dist/ 的改动行（空行剔掉）；为空 ⇒ 上一提交只动了产物
   changed="$(git show --pretty=format: --name-only HEAD | grep -v '^dist/' | grep -v '^$' || true)"
   if [ -z "$changed" ]; then
@@ -32,8 +39,15 @@ if [ "$(git log -1 --format=%ae)" = "$BOT_MAIL" ]; then
   echo "$changed" | sed 's/^/     /'
 fi
 
-git config user.name  "cnb-bot"
-git config user.email "cnb-bot@cnb.cool"
+# ⚠️ 作者可以用环境变量覆盖，这不是可选项。
+#    产物提交必须是 cnb-bot（上面那条防自触发的判据靠它）；
+#    但「发布候选」那次提交**不能**是 cnb-bot —— 它是整轮的第一个提交，
+#    如果作者也是 cnb-bot，最后那次真正的产物提交会被守卫当成产物提交跳过，
+#    表现是「阶段全部成功、dist/ 却没有新产物」。
+AUTHOR_NAME="${CI_AUTHOR_NAME:-cnb-bot}"
+AUTHOR_EMAIL="${CI_AUTHOR_EMAIL:-cnb-bot@cnb.cool}"
+git config user.name  "$AUTHOR_NAME"
+git config user.email "$AUTHOR_EMAIL"
 
 if [ ! -d dist ]; then
   echo "没有 dist/ 目录，跳过提交"

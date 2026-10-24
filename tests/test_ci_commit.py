@@ -28,7 +28,12 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
 SCRIPT = ROOT / "scripts" / "ci_commit.sh"
+
+from _bash import find_bash  # noqa: E402  （要先补 sys.path）
+
+BASH = find_bash()
 
 
 def _have(cmd: str) -> bool:
@@ -66,7 +71,9 @@ def _seed(tmp: Path) -> tuple[Path, Path]:
 
 
 def _commit_script(run: Path, msg: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", str(run / "scripts" / "ci_commit.sh"), msg],
+    # 路径写成 POSIX 形式：交给 bash 的 `D:\...` 会把反斜杠吃掉（见 _bash.py）
+    script = (run / "scripts" / "ci_commit.sh").as_posix()
+    return subprocess.run([BASH, script, msg],
                           cwd=str(run), capture_output=True, text=True)
 
 
