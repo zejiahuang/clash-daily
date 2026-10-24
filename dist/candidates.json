@@ -1,0 +1,205 @@
+{
+ "run_id": "smoke-20261024T203642",
+ "generated_at": "2026-10-24 21:30:00 +0800",
+ "vantage": "中国·广东·广州",
+ "delay_url": "https://www.gstatic.com/generate_204",
+ "stats": {
+  "raw": 100,
+  "unique": 90,
+  "duplicates": 10,
+  "tcp_alive": 60,
+  "loadable": 60,
+  "rejected": 0,
+  "delay_ok": 6
+ },
+ "sources": [
+  {
+   "id": "smoke",
+   "urls": [],
+   "articles": [],
+   "count": 100,
+   "error": null,
+   "note": "冒烟"
+  }
+ ],
+ "server_countries": {
+  "s0001": "US",
+  "s0002": "US",
+  "s0003": "US",
+  "s0004": "US",
+  "s0005": "US",
+  "s0006": "US"
+ },
+ "knobs": {
+  "speed_bytes": 2000000,
+  "speed_workers": 6,
+  "speed_timeout": 8.0,
+  "refine_top": 6,
+  "refine_workers": 2,
+  "refine_bytes": 4000000,
+  "ip_timeout": 6.0
+ },
+ "candidates": [
+  {
+   "type": "vless",
+   "server": "104.17.148.22",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "alpn": [
+    "http/1.1"
+   ],
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36"
+    },
+    "path": "/"
+   },
+   "packet-encoding": "xudp",
+   "sub_tag": "S004-260618",
+   "xudp": true,
+   "name": "s0001",
+   "delay": 110
+  },
+  {
+   "type": "vless",
+   "server": "172.64.154.211",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "alpn": [
+    "h3",
+    "h2"
+   ],
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.67 Safari/537.36"
+    },
+    "path": "/"
+   },
+   "encryption": "none",
+   "packet-encoding": "xudp",
+   "sub_tag": "S004-260618",
+   "xudp": true,
+   "name": "s0002",
+   "delay": 120
+  },
+  {
+   "type": "vless",
+   "server": "104.18.37.127",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "alpn": [
+    "http/1.1"
+   ],
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36"
+    },
+    "path": "/?TELEGRAM-TOOTFFARANGI"
+   },
+   "encryption": "none",
+   "packet-encoding": "xudp",
+   "sub_tag": "B007-260618",
+   "xudp": true,
+   "name": "s0003",
+   "delay": 130
+  },
+  {
+   "type": "vless",
+   "server": "104.17.3.81",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "alpn": [
+    "http/1.1"
+   ],
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36"
+    },
+    "path": "/fdip#TELEGRAM--MARAMBASHI--MARAMBASHI--MARAMBASHI--MARAMBASHI",
+    "early-data-header-name": "Sec-WebSocket-Protocol",
+    "max-early-data": 2560
+   },
+   "packet-encoding": "xudp",
+   "sub_tag": "S004-260618",
+   "xudp": true,
+   "name": "s0004",
+   "delay": 140
+  },
+  {
+   "type": "vless",
+   "server": "104.18.46.214",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (X11; Datanyze; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36"
+    },
+    "path": "/"
+   },
+   "encryption": "none",
+   "packet-encoding": "xudp",
+   "sub_tag": "F003-260618",
+   "xudp": true,
+   "name": "s0005",
+   "delay": 150
+  },
+  {
+   "type": "vless",
+   "server": "172.67.75.172",
+   "port": 443,
+   "udp": true,
+   "uuid": "495c7195-85b8-498a-bf20-2ea9ce9175b5",
+   "tls": true,
+   "servername": "snip.edgeoneai.cc.cd",
+   "alpn": [
+    "h3",
+    "h2"
+   ],
+   "client-fingerprint": "chrome",
+   "network": "ws",
+   "ws-opts": {
+    "headers": {
+     "Host": "snip.edgeoneai.cc.cd",
+     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.162 Safari/537.36"
+    },
+    "path": "/"
+   },
+   "encryption": "none",
+   "packet-encoding": "xudp",
+   "sub_tag": "S004-260618",
+   "xudp": true,
+   "name": "s0006",
+   "delay": 160
+  }
+ ]
+}
