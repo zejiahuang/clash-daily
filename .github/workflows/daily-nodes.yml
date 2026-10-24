@@ -26,6 +26,10 @@ on:
         description: "复测并发"
         required: false
         default: "16"
+      speed_bytes:
+        description: "每个节点下载多少字节用于测速（越小越快，但快节点会被分母下限截顶）"
+        required: false
+        default: "6000000"
       delay_timeout:
         description: "单节点延迟测速超时（毫秒）"
         required: false
@@ -93,6 +97,7 @@ jobs:
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           REFINE_TOP: ${{ inputs.refine_top || '300' }}
           REFINE_WORKERS: ${{ inputs.refine_workers || '16' }}
+          SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
           # 有个源站（freeclashverge）要读 GitHub trees API 才能定位最新日期的文件，
           # 匿名 60 次/小时不够用，带上 token 提到 5000 次/小时。
@@ -106,6 +111,7 @@ jobs:
             --speed-workers "$SPEED_WORKERS" \
             --refine-top "$REFINE_TOP" \
             --refine-workers "$REFINE_WORKERS" \
+            --speed-bytes "$SPEED_BYTES" \
             --delay-timeout "$DELAY_TIMEOUT"
 
       - name: 校验产物
