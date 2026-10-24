@@ -18,7 +18,7 @@ from . import geoip
 from . import netcheck
 from . import nodes as nodemod
 from . import sources as source_mod
-from .mihomo import SPEED_URL, TEST_URL, Mihomo, ensure_binary
+from .mihomo import REACH_TARGETS, SPEED_URL, TEST_URL, Mihomo, ensure_binary
 
 CST = timezone(timedelta(hours=8))
 
@@ -48,6 +48,8 @@ class BuildResult:
     # 测速机所在位置。速度是「这台机器 → 节点」的实测值，换个地方测就是另一个数，
     # 所以必须写进订阅文件头部，否则使用者会把它当成自己那边的速度。
     vantage: str = ""
+    # 多目标可达性分布：{通过目标数: 节点数}。纯诊断，不参与筛选。
+    reach: dict[int, int] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- 延迟测速
@@ -80,6 +82,74 @@ def _delay_all(mh: Mihomo, proxies: list[dict], *, url: str, timeout_ms: int,
     return results
 
 
+def _reachability(mh: Mihomo, proxies: list[dict], *, timeout_ms: int,
+                  workers: int, log=print) -> dict[str, list[str]]:
+    """对每个节点跑一遍多个目标，返回 {节点名: [通过的目标名]}。
+
+    为什么要这一步：主延迟只用 gstatic（Google）一个目标，而「能通 Google」
+    不等于「能通微软 / Apple / Cloudflare」—— 有些免费节点专门针对 Google 优化过，
+    换一个站就打不开。这一轮**只记录、不剔除**：先看真实分布，再决定要不要拿它筛。
+
+    ⚠️ 只能判断「有没有响应」，判断不了「响应内容对不对」——
+    mihomo 的 delay API 只回耗时。所以被劫持的 200 也会算通过。
+    """
+    total = len(proxies)
+    if not total:
+        return {}
+    jobs = [(p["name"], label, url) for p in proxies for label, url in REACH_TARGETS]
+    log(f"  多目标可达性：{total} 个节点 × {len(REACH_TARGETS)} 个目标 = {len(jobs)} 次探测")
+
+    hits: dict[str, list[str]] = {p["name"]: [] for p in proxies}
+
+    def job(name: str, label: str, url: str):
+        return name, label, mh.delay(name, url, timeout_ms)
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(job, *item) for item in jobs]
+        for future in as_completed(futures):
+            try:
+                name, label, value = future.result()
+            except Exception:  # noqa: BLE001
+                continue
+            if value:
+                hits[name].append(label)
+            done += 1
+            if done % 500 == 0 or done == len(jobs):
+                log(f"    ... {done}/{len(jobs)}")
+    return hits
+
+
+def _report_reachability(hits: dict[str, list[str]], *, log=print) -> dict[int, int]:
+    """把可达性矩阵压成分布，并指出「只通一个目标」的节点分别通的是哪个。
+
+    后者是关键：如果大量节点只通 google，说明它们专门针对 Google 优化，
+    对使用者来说换个站就打不开 —— 这类节点现在完全看不出来。
+    """
+    if not hits:
+        return {}
+    total = len(hits)
+    dist: dict[int, int] = defaultdict(int)
+    for labels in hits.values():
+        dist[len(labels)] += 1
+    full = len(REACH_TARGETS)
+    log(f"  可达目标数分布（{total} 个节点）：")
+    for n in range(full, -1, -1):
+        count = dist.get(n, 0)
+        if not count:
+            continue
+        bar = "█" * max(1, round(count / total * 36))
+        log(f"    {n}/{full}  {count:>5} 个 {count / total * 100:>5.1f}%  {bar}")
+    lone = [labels[0] for labels in hits.values() if len(labels) == 1]
+    if lone:
+        from collections import Counter
+
+        tally = Counter(lone)
+        detail = "、".join(f"{k} {v} 个" for k, v in tally.most_common())
+        log(f"  只通一个目标的 {len(lone)} 个：{detail}")
+    return dict(dist)
+
+
 # --------------------------------------------------------------------------- 主流程
 
 
@@ -94,6 +164,8 @@ def build(
     delay_url: str = TEST_URL,
     delay_timeout_ms: int = 5000,
     delay_workers: int = 32,
+    # 多目标可达性诊断（Google / Cloudflare / 微软 / Apple）。默认开，纯诊断不筛选。
+    reach_check: bool = True,
     speed_url: str = SPEED_URL,
     speed_bytes: int = 6_000_000,
     speed_timeout: float = 10.0,
@@ -189,6 +261,14 @@ def build(
             log(f"  延迟可用 {len(delays)}/{len(loadable)}")
             candidates = [p for p in loadable if p["name"] in delays]
             candidates.sort(key=lambda p: delays[p["name"]])
+
+            # 多目标可达性：纯诊断，不参与筛选。
+            # 主延迟只问 gstatic（Google）一个目标，「能通 Google」不等于「能通别的站」。
+            # 这一轮只报告分布，先看有多少节点是「只通一个站」的，再决定要不要拿它筛。
+            if reach_check and candidates:
+                hits = _reachability(mh, candidates, timeout_ms=delay_timeout_ms,
+                                     workers=delay_workers, log=log)
+                result.reach = _report_reachability(hits, log=log)
             if not candidates:
                 raise SystemExit("延迟测速后没有任何节点可用")
 
@@ -770,11 +850,32 @@ def _render_markdown(result: BuildResult) -> str:
         f"| 同出口合并 | -{stats.merged_exit}（同一出口只留最快的那个） |",
         f"| 最终收录 | {stats.accepted} |",
         "",
+    ]
+    if result.reach:
+        # 只诊断、不筛选。主延迟只问 gstatic（Google）一个目标，
+        # 「能通 Google」不等于「能通别的站」—— 这张表把差距摆出来。
+        full = len(REACH_TARGETS)
+        total_reach = sum(result.reach.values())
+        lines.extend([
+            "## 多目标可达性（诊断用，不参与筛选）",
+            "",
+            f"每个节点分别访问 {full} 个目标："
+            + "、".join(label for label, _ in REACH_TARGETS) + "。",
+            "",
+            "| 通过目标数 | 节点数 | 占比 |",
+            "| ---: | ---: | ---: |",
+        ])
+        for n in range(full, -1, -1):
+            count = result.reach.get(n, 0)
+            if count:
+                lines.append(f"| {n}/{full} | {count} | {count / total_reach:.1%} |")
+        lines.append("")
+    lines.extend([
         "## 地区分布",
         "",
         "| 地区 | 节点数 | 平均速度 |",
         "| --- | ---: | ---: |",
-    ]
+    ])
     best: dict[str, float] = {}
     for record in result.records:
         cur = best.get(record["country"])
