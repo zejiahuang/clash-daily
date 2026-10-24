@@ -101,7 +101,12 @@ def build(
     speed_max: int = 0,
     refine_top: int = 300,
     refine_workers: int = 16,
-    apac_check_top: int = 40,
+    # ⚠️ 默认关闭。两轮实测（run #12/#13）都没拿到可信数据：
+    # #12 跳板 5.1 MB/s（比样本最慢的还慢），判据被压平却报了 9 个假阳性；
+    # #13 跳板 11.1 MB/s，40 个样本里 27 个经跳板完全测不出，比值中位数 0.30。
+    # 免费节点池里没有质量足够好的亚太跳板 —— 这不是代码能修的。
+    # 想再试：--apac-check-top 40 --apac-min-hop 8，并看日志里「无分辨力」有没有出现。
+    apac_check_top: int = 0,
     apac_check_workers: int = 1,
     apac_min_hop: float = 8.0,
     ip_timeout: float = 6.0,
@@ -430,11 +435,14 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
     ceiling_hits = 0
     false_pos: list[tuple[str, float, float]] = []
     best_via = 0.0
+    dead_via = 0
     for proxy in sample:
         name = proxy["name"]
         direct = _speed_of(proxy, probes)
         via = float(again.get(name, {}).get("speed") or 0.0)
         if via <= 0 or direct <= 0:
+            if direct > 0:
+                dead_via += 1
             continue
         best_via = max(best_via, via)
         ratios.append(via / direct)
@@ -444,6 +452,12 @@ def _apac_check(mh, candidates: list[dict], probes: dict[str, dict],
         # 说明这个低值不是被天花板压出来的，是真的慢。
         if direct >= 3.0 and via < 1.0:
             false_pos.append((name, direct, via))
+
+    if dead_via:
+        # 这个数必须打出来：run #13 是 27/40。它可能意味着「这些节点从亚太确实不通」，
+        # 也可能只是跳板不稳 —— 单看这个数分不开，但藏着它就永远发现不了。
+        log(f"  经跳板完全测不出速度 {dead_via}/{len(sample)} 个"
+            f"（要么跳板不稳，要么这些节点从亚太确实不通）")
 
     if not ratios:
         log("  ⚠️ 经跳板一个都没测出速度，本轮无结论（跳板可能不可用）")
