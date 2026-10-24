@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import ipaddress
 import json
 import os
 import platform
@@ -46,6 +47,32 @@ GROUP = "PROBE"
 TEST_URL = "http://www.gstatic.com/generate_204"
 SPEED_URL = "https://speed.cloudflare.com/__down?bytes=2000000"
 LISTENER_BASE_PORT = 20000
+
+
+def _plausible_exit_ip(text: str) -> bool:
+    """出口 IP 探测的返回值是不是一个可信的「我这边的地址」。
+
+    以前只判断「非空且短于 64 字节」，结果一个 http 节点把 `104.26.0.0` 当出口 IP
+    交上来了（run #7 的 加拿大-01）—— 那是 Cloudflare 的网段地址，不是任何客户端
+    的地址，GeoIP 照样给它编了个国家，于是节点名里的国家是错的。
+    代理返回错误页时，短响应体很容易被当成 IP，所以这里必须真的解析一遍。
+
+    排除项：
+    - 不是合法 IP 字面量（含 HTML 片段、域名等）
+    - 私有 / 回环 / 链路本地 / 保留地址 —— 那是隧道内部地址，不是出口
+    - IPv4 末位是 .0 或 .255 —— 网段地址与广播地址，ipify 不会把它报成客户端地址
+    """
+    if not text or len(text) >= 64:
+        return False
+    try:
+        addr = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    if not addr.is_global:
+        return False
+    if addr.version == 4 and int(str(addr).rsplit(".", 1)[1]) in (0, 255):
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------- 下载内核
@@ -361,7 +388,7 @@ class Mihomo:
                 req = urllib.request.Request(url, headers={"User-Agent": UA})
                 with self._opener(port).open(req, timeout=timeout) as resp:
                     text = resp.read(200).decode("utf-8", "replace").strip()
-                if text and len(text) < 64:
+                if _plausible_exit_ip(text):
                     return text
             except Exception:  # noqa: BLE001
                 continue
