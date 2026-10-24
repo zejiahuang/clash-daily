@@ -29,6 +29,10 @@ on:
         description: '测速前上限（0=不预采样，全部测速）'
         required: false
         default: '0'
+      speed_bytes:
+        description: '每个节点下载多少字节用于测速（越小越快，但快节点会被分母下限截顶）'
+        required: false
+        default: '6000000'
 
 concurrency:
   max: 1
@@ -81,13 +85,15 @@ jobs:
           MAX_NODES: ${{ inputs.max_nodes || '80' }}
           SPEED_WORKERS: ${{ inputs.speed_workers || '32' }}
           SPEED_MAX: ${{ inputs.speed_max || '0' }}
+          SPEED_BYTES: ${{ inputs.speed_bytes || '6000000' }}
         run: |
           python3 main.py \
             --out dist \
             --work work \
             --max-nodes "$MAX_NODES" \
             --speed-workers "$SPEED_WORKERS" \
-            --speed-max "$SPEED_MAX"
+            --speed-max "$SPEED_MAX" \
+            --speed-bytes "$SPEED_BYTES"
 
       - name: 校验产物
         run: |
