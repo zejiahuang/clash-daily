@@ -58,6 +58,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="对初筛最快的多少个做低并发复测（0=不复测）")
     parser.add_argument("--refine-workers", type=int, default=16,
                         help="复测并发（故意低于初筛，减少抢带宽造成的低估）")
+    parser.add_argument("--refine-bytes", type=int, default=24_000_000,
+                        help="复测每个节点下载多少字节。必须明显大于 --speed-bytes："
+                             "测速分母有 0.05 秒地板，6 MB 时上限只有 114 MB/s，"
+                             "快节点会被算成同一个数；24 MB 把上限抬到 458 MB/s")
     parser.add_argument("--ip-timeout", type=float, default=6.0, help="出口 IP 探测超时(秒)")
     parser.add_argument("--apac-check-top", type=int, default=0,
                         help="经一台亚太节点当跳板复测最快的多少个（0=不做交叉验证，默认关闭）。"
@@ -121,6 +125,7 @@ def main(argv=None) -> int:
             speed_max=args.speed_max,
             refine_top=args.refine_top,
             refine_workers=args.refine_workers,
+            refine_bytes=args.refine_bytes,
             apac_check_top=args.apac_check_top,
             apac_check_workers=args.apac_check_workers,
             apac_min_hop=args.apac_min_hop,

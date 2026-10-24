@@ -179,6 +179,9 @@ def build(
     speed_max: int = 0,
     refine_top: int = 300,
     refine_workers: int = 16,
+    # 复测单独用更大的下载量：6 MB 会把快节点顶到 max(span, 0.05) 的地板上，
+    # 算出来的数字是「除出来的」而不是「测出来的」。算式见 _refine_speed 的 docstring。
+    refine_bytes: int = 24_000_000,
     # ⚠️ 默认关闭。两轮实测（run #12/#13）都没拿到可信数据：
     # #12 跳板 5.1 MB/s（比样本最慢的还慢），判据被压平却报了 9 个假阳性；
     # #13 跳板 11.1 MB/s，40 个样本里 27 个经跳板完全测不出，比值中位数 0.30。
@@ -306,31 +309,21 @@ def build(
             result.stats.speed_ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
             log(f"  下载测速可用 {result.stats.speed_ok}/{len(candidates)}")
 
-            # 复测：高并发初筛时几十个节点在抢同一条出口带宽，快节点会被压低，
-            # 而写进节点名的就是这个数。所以把「可能进入最终名单」的那批用低并发重测一次。
-            # 只覆盖复测确实测出速度的项 —— 复测失败不能把初筛的有效结果冲掉。
-            if refine_top > 0:
-                ranked = sorted(candidates, key=lambda p: -_speed_of(p, probes))
-                refine = [p for p in ranked[:refine_top] if _speed_of(p, probes) > 0]
-                if refine:
-                    log(f"  复测前 {len(refine)} 个（并发 {refine_workers}，"
-                        f"消除初筛抢带宽造成的低估）")
-                    again = mh.probe_all(
-                        refine,
-                        speed_url=speed_url, speed_bytes=speed_bytes,
-                        speed_timeout=speed_timeout, ip_timeout=ip_timeout,
-                        workers=refine_workers, log=log,
-                    )
-                    improved = 0
-                    for name, item in again.items():
-                        if item.get("speed", 0) > 0:
-                            if item["speed"] > probes.get(name, {}).get("speed", 0):
-                                improved += 1
-                            probes[name] = item
-                    result.stats.speed_ok = sum(
-                        1 for v in probes.values() if v.get("speed", 0) > 0)
-                    log(f"  复测完成，其中 {improved} 个比初筛更快；"
-                        f"总计可用 {result.stats.speed_ok}")
+            # 复测：低并发 + 更大的下载量重测「可能进入最终名单」的那批。
+            # 为什么必须换更大的下载量、为什么不能沿用初筛的 speed_bytes，
+            # 算式与实测依据都在 _refine_speed 的 docstring 里。
+            improved = _refine_speed(
+                mh, candidates, probes,
+                top=refine_top, workers=refine_workers,
+                speed_url=speed_url, speed_bytes=refine_bytes,
+                speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+                screen_bytes=speed_bytes, log=log,
+            )
+            if improved is not None:
+                result.stats.speed_ok = sum(
+                    1 for v in probes.values() if v.get("speed", 0) > 0)
+                log(f"  复测完成，其中 {improved} 个比初筛更快；"
+                    f"总计可用 {result.stats.speed_ok}")
         finally:
             mh.stop()
 
@@ -443,6 +436,59 @@ def _shown_speed(speed: float) -> float:
     原始值 > 0 能过过滤，但名字写成 `XX-01-0.0MB/S` —— 对使用者就是个坏节点。
     """
     return float(f"{speed:.1f}")
+
+
+def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
+                  top: int, workers: int, speed_url: str, speed_bytes: int,
+                  speed_timeout: float, ip_timeout: float,
+                  screen_bytes: int = 0, log=print) -> int | None:
+    """对初筛最快的一批用低并发 + 更大的下载量重测，原地更新 probes。
+
+    返回「比初筛更快」的个数；`top<=0` 或没有可复测的项时返回 None。
+
+    为什么要单独一轮：初筛并发 32，几十个节点在抢同一条出口带宽，快节点被压低，
+    而**写进节点名的就是这个数**。
+
+    为什么要单独的下载量（`speed_bytes` 参数必须传复测量，不能沿用初筛的）：
+    `measure_speed()` 的分母是「首字节 → 末字节」，且下限 `max(span, 0.05)`：
+
+        6 MB  ⇒ 上限 5.72 / 0.05 = 114.4 MB/s
+                 run #11 头名 112.75，反推 span = 0.0507 秒 —— 正好压在地板上，
+                 那个数字不是测出来的，是除出来的，真实值可能是 150 也可能是 500。
+        24 MB ⇒ 上限 22.89 / 0.05 = 457.8 MB/s，免费节点够不到，地板不再参与。
+
+    初筛保持小下载量：1400 个 × 24 MB = 33 GB，只为排个序不值得；
+    复测 300 个 × 24 MB = 7.2 GB 上限，且每个都被 `speed_timeout` 兜住。
+    """
+    if top <= 0:
+        return None
+    ranked = sorted(candidates, key=lambda p: -_speed_of(p, probes))
+    refine = [p for p in ranked[:top] if _speed_of(p, probes) > 0]
+    if not refine:
+        return None
+
+    hint = f"，每个下 {speed_bytes / 1048576:.0f} MB"
+    if screen_bytes > 0 and screen_bytes != speed_bytes:
+        hint += (f"（初筛 {screen_bytes / 1048576:.0f} MB，"
+                 f"上限从 {screen_bytes / 1048576 / 0.05:.0f} MB/s 抬到 "
+                 f"{speed_bytes / 1048576 / 0.05:.0f} MB/s）")
+    log(f"  复测前 {len(refine)} 个（并发 {workers}{hint}，"
+        f"消除初筛抢带宽造成的低估与 0.05 秒地板截断）")
+
+    again = mh.probe_all(
+        refine,
+        speed_url=speed_url, speed_bytes=speed_bytes,
+        speed_timeout=speed_timeout, ip_timeout=ip_timeout,
+        workers=workers, log=log,
+    )
+    improved = 0
+    for name, item in again.items():
+        # 复测失败不能把初筛的有效结果冲掉。
+        if item.get("speed", 0) > 0:
+            if item["speed"] > probes.get(name, {}).get("speed", 0):
+                improved += 1
+            probes[name] = item
+    return improved
 
 
 # 跳板必须落在这里，「亚太视角」才成立。含大洋洲与南亚：它们到国内的路径
