@@ -9,7 +9,7 @@ on:
       max_nodes:
         description: "最终最多保留多少个节点"
         required: false
-        default: "300"
+        default: "100"
       speed_max:
         description: "最多对多少个节点做下载测速"
         required: false
@@ -37,7 +37,7 @@ jobs:
     #   - 想「从中国大陆附近测速」→ 在亚太机器上装 self-hosted runner，
     #     并把仓库变量 RUNNER_LABEL 设为该 runner 的标签（如 asia）
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     steps:
       - name: 检出仓库
@@ -70,18 +70,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 单元测试（解析器 / 二分定位 / 分层取样）
+      - name: 单元测试（解析器 / 二分定位 / 分层取样 / 源站适配器）
         run: |
           python tests/test_parsers.py
           python tests/test_bisect.py
           python tests/test_selection.py
+          python tests/test_sources.py
 
       - name: 采集 · 测速 · 生成配置
         env:
-          MAX_NODES: ${{ inputs.max_nodes || '300' }}
+          MAX_NODES: ${{ inputs.max_nodes || '100' }}
           SPEED_MAX: ${{ inputs.speed_max || '400' }}
           SPEED_WORKERS: ${{ inputs.speed_workers || '16' }}
           DELAY_TIMEOUT: ${{ inputs.delay_timeout || '5000' }}
+          # 有个源站（freeclashverge）要读 GitHub trees API 才能定位最新日期的文件，
+          # 匿名 60 次/小时不够用，带上 token 提到 5000 次/小时。
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python main.py \
             --out dist \
