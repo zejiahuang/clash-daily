@@ -443,10 +443,14 @@ class Mihomo:
 
     def probe_one(self, port: int, *, speed_url: str, speed_bytes: int,
                   speed_timeout: float, ip_timeout: float) -> dict:
-        """先测速再测出口 IP：速度 0 说明节点不可用，不必再花时间问 IP。"""
+        """先测速再测出口 IP：速度 0 说明节点不可用，不必再花时间问 IP。
+
+        `ip_timeout <= 0` 表示跳过出口 IP（交叉复测时用：出口 IP 上一轮已经拿到，
+        再问一次纯属浪费）。
+        """
         speed = self.measure_speed(port, speed_url, speed_bytes, speed_timeout)
         exit_ip = None
-        if speed > 0:
+        if speed > 0 and ip_timeout > 0:
             exit_ip = self.exit_ip(port, ip_timeout)
         return {"speed": speed, "exit_ip": exit_ip}
 
@@ -461,24 +465,44 @@ class Mihomo:
         workers: int = 16,
         batch_size: int = 150,
         base_port: int = LISTENER_BASE_PORT,
+        hop: dict | None = None,
         log=print,
     ) -> dict[str, dict]:
-        """分批给每个节点绑一个入站端口，并行测速 + 探出口 IP。"""
+        """分批给每个节点绑一个入站端口，并行测速 + 探出口 IP。
+
+        `hop` 非空时，每个被测节点都挂上 `dialer-proxy: <hop 名>`，链路变成
+        本机 → hop → 节点 → 目标站。hop 自己不进 ports，所以不占监听端口。
+
+        ⚠️ 串起来的链路速度取「最慢的一段」，而 `本机 → hop` 这一段就在路径里
+        ⇒ **hop 自身的速度就是整轮测速的天花板**。它只适合回答
+        「这个节点从 hop 所在地区看是不是至少 X MB/s」，不能用来测出高于 hop 的速度。
+        """
         results: dict[str, dict] = {}
         total = len(proxies)
         if not total:
             return results
+        hop_name = hop["name"] if hop else None
+        if hop_name and any(p["name"] == hop_name for p in proxies):
+            raise ValueError(f"跳板 {hop_name} 不能同时出现在被测节点里（会自我循环）")
         log(f"  下载测速：{total} 个节点，并发 {workers}，"
-            f"每个最多下 {speed_bytes / 1e6:.1f}MB，超时 {speed_timeout:.0f}s")
+            f"每个最多下 {speed_bytes / 1e6:.1f}MB，超时 {speed_timeout:.0f}s"
+            + (f"，经跳板 {hop_name}" if hop_name else ""))
 
         done = 0
         for offset in range(0, total, batch_size):
-            batch = proxies[offset:offset + batch_size]
-            ports = {p["name"]: base_port + i for i, p in enumerate(batch)}
+            targets = proxies[offset:offset + batch_size]
+            # 端口只按被测节点分配；跳板没有 listener，不占端口
+            ports = {p["name"]: base_port + i for i, p in enumerate(targets)}
+            if hop:
+                # 每批都要把跳板重新放进 proxies —— mihomo 的 dialer-proxy 引用的是
+                # 同一份配置里的 proxy 名，跨批不共享。
+                batch = [hop] + [{**p, "dialer-proxy": hop_name} for p in targets]
+            else:
+                batch = targets
             try:
                 self.start(batch, ports, ready_port=base_port)
             except Exception as exc:  # noqa: BLE001
-                log(f"    [warn] 批次启动失败（跳过 {len(batch)} 个）: {exc}")
+                log(f"    [warn] 批次启动失败（跳过 {len(targets)} 个）: {exc}")
                 continue
             try:
                 with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -488,7 +512,8 @@ class Mihomo:
                             speed_url=speed_url, speed_bytes=speed_bytes,
                             speed_timeout=speed_timeout, ip_timeout=ip_timeout,
                         ): p["name"]
-                        for p in batch
+                        # 遍历 targets 而不是 batch：batch 里那个跳板没有端口
+                        for p in targets
                     }
                     for future in as_completed(futures):
                         name = futures[future]
