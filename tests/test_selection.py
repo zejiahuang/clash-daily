@@ -14,7 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from clashhunter.builder import _shown_speed, _stratified  # noqa: E402
+from clashhunter.builder import _dedupe_by_exit, _shown_speed, _stratified  # noqa: E402
+from clashhunter.mihomo import _plausible_exit_ip  # noqa: E402
 
 
 def build_corpus(dominant: int, others: dict[str, int]) -> tuple[list[dict], dict[str, str]]:
@@ -102,6 +103,88 @@ def main() -> int:
         if f"{raw:.1f}" != f"{_shown_speed(raw):.1f}":
             problems.append(f"_shown_speed({raw}) 与名字里的 f'{raw:.1f}' 不一致")
 
+    # 8. 同一个出口 IP 只能留最快的那个
+    #    背景：nodes.dedupe() 的键是 (type, server, port, 凭证)，所以「同一台服务器、
+    #    同一个端口，只是凭证不同」的两条会被当成两个节点。run #7 的最终 100 个里
+    #    有三对其实是同一个出口，等于白扔了 3 个名额。这里直接用那三对真实数据。
+    quiet = lambda *a, **k: None  # noqa: E731
+    dupes = [
+        {"name": "us07", "type": "http", "server": "138.199.35.215", "port": 9002},
+        {"name": "us13", "type": "http", "server": "138.199.35.215", "port": 9002},
+        {"name": "cm01", "type": "http", "server": "102.244.78.61", "port": 8086},
+        {"name": "cm02", "type": "http", "server": "102.244.78.61", "port": 8084},
+        {"name": "noexit1", "type": "vless", "server": "43.154.165.40", "port": 443},
+        {"name": "noexit2", "type": "vless", "server": "116.204.164.17", "port": 7443},
+    ]
+    dup_probes = {
+        "us07": {"speed": 9.9, "exit_ip": "138.199.35.215"},
+        "us13": {"speed": 9.6, "exit_ip": "138.199.35.215"},
+        "cm01": {"speed": 0.05, "exit_ip": "102.244.78.57"},
+        "cm02": {"speed": 0.05, "exit_ip": "102.244.78.57"},
+        "noexit1": {"speed": 2.2, "exit_ip": None},
+        "noexit2": {"speed": 2.6, "exit_ip": None},
+    }
+    out_du = _dedupe_by_exit(dupes, dup_probes, log=quiet)
+    got_names = [p["name"] for p in out_du]
+    if sorted(got_names) != ["cm01", "noexit1", "noexit2", "us07"]:
+        problems.append(f"同出口合并结果 {sorted(got_names)}，"
+                        f"应为 ['cm01','noexit1','noexit2','us07']")
+    if len(out_du) != 4:
+        problems.append(f"同出口合并后 {len(out_du)} 个，应为 4（6 个里有 2 个是同出口）")
+
+    # 慢的排在前面时也要被快的替换掉 —— 否则「留最快」只是「留第一个」
+    rev = [
+        {"name": "slow", "type": "http", "server": "1.2.3.4", "port": 80},
+        {"name": "fast", "type": "http", "server": "1.2.3.4", "port": 80},
+    ]
+    rev_probes = {
+        "slow": {"speed": 1.0, "exit_ip": "9.9.9.9"},
+        "fast": {"speed": 8.0, "exit_ip": "9.9.9.9"},
+    }
+    out_rev = _dedupe_by_exit(rev, rev_probes, log=quiet)
+    if [p["name"] for p in out_rev] != ["fast"]:
+        problems.append(f"同出口保留的是 {[p['name'] for p in out_rev]}，应保留更快的 'fast'")
+
+    # 没有 exit_ip 的节点：只要 server:port 不同就都保留（无从判断是否同出口）
+    if len(_dedupe_by_exit(dupes[4:], dup_probes, log=quiet)) != 2:
+        problems.append("没有 exit_ip 且 server:port 不同的节点被误合并了")
+
+    # 没有 exit_ip 但 server:port 完全相同的两条，是同一条管道，必须合并。
+    # 实测 run #7 的 瑞士-01/瑞士-02 就是 116.204.164.17:7443 的两条，都没测出出口 IP。
+    same_ep = [
+        {"name": "ch01", "type": "vless", "server": "116.204.164.17", "port": 7443},
+        {"name": "ch02", "type": "vless", "server": "116.204.164.17", "port": 7443},
+    ]
+    same_probes = {
+        "ch01": {"speed": 3.1, "exit_ip": None},
+        "ch02": {"speed": 2.64, "exit_ip": None},
+    }
+    out_ep = _dedupe_by_exit(same_ep, same_probes, log=quiet)
+    if [p["name"] for p in out_ep] != ["ch01"]:
+        problems.append(f"同 server:port 且无出口 IP 时保留的是 "
+                        f"{[p['name'] for p in out_ep]}，应保留更快的 'ch01'")
+
+    # 9. 出口 IP 必须是可信的公网地址字面量
+    #    背景：run #7 的 加拿大-01 的 exit_ip 是 104.26.0.0 —— Cloudflare 网段地址，
+    #    不是任何客户端的地址，GeoIP 照样给它编了个国家，于是节点名里的国家是错的。
+    ip_cases = [
+        ("104.26.0.0", False, "网段地址，ipify 不会把客户端报成这个"),
+        ("102.244.78.255", False, "广播地址"),
+        ("127.0.0.1", False, "回环"),
+        ("10.0.0.5", False, "私有地址"),
+        ("192.168.1.7", False, "私有地址"),
+        ("<html>", False, "代理返回的错误页"),
+        ("", False, "空响应"),
+        ("138.199.35.215", True, "正常公网地址"),
+        ("2606:4700::1111", True, "公网 IPv6"),
+        ("::1", False, "回环 IPv6"),
+    ]
+    for text, want, why in ip_cases:
+        got = _plausible_exit_ip(text)
+        if got != want:
+            problems.append(f"_plausible_exit_ip({text!r}) = {got}，应为 {want}（{why}）")
+
+
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:
@@ -109,7 +192,6 @@ def main() -> int:
         return 1
     print("✓ 分层取样通过：小国全部保留、大国被配额约束、边界场景正常")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
