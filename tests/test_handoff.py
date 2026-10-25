@@ -359,7 +359,7 @@ def _serve(directory: Path, port: int) -> ThreadingHTTPServer:
 
 def _run_wait(tmp: Path, served: dict, *, timeout_s: int = 8,
               gh_runs: list[dict] | None = None,
-              gh_bad_limit: int = 2) -> subprocess.CompletedProcess:
+              idle_grace: int = 900) -> subprocess.CompletedProcess:
     """起一个本地 HTTP 服务当「GitHub 的 raw + Actions API」，跑一遍等待脚本。
 
     `gh_runs` 给的是 Actions API 的假响应；不给就把探测关掉（`WAIT_GH_API=off`）——
@@ -387,7 +387,7 @@ def _run_wait(tmp: Path, served: dict, *, timeout_s: int = 8,
                  "WAIT_TIMEOUT_S": str(timeout_s),
                  "WAIT_GH_API": gh_api,
                  "WAIT_GH_PROBE_EVERY": "0",
-                 "WAIT_GH_BAD_LIMIT": str(gh_bad_limit),
+                 "WAIT_IDLE_GRACE": str(idle_grace),
                  "SPEED_OUT": "dist/speed.json"},
         )
     finally:
@@ -496,46 +496,54 @@ def test_workflow_shape(problems: list[str]) -> None:
                         "GitHub 不可达时它会永远安静地跳过，一直是绿的")
 
 
-def test_wait_speed_gives_up_when_github_is_dead(problems: list[str]) -> None:
-    """D4. GitHub 根本没在跑 ⇒ 提前放弃并说明原因，不能干等到超时。
+def test_wait_speed_gives_up_when_nobody_is_watching(problems: list[str]) -> None:
+    """D4. 没有看守在跑 ⇒ 15 分钟宽限后就放弃，不能干等到 60 分钟上限。
 
-    这就是 2026-10-25 那 40 分钟的场景：speed.json 一直是上一轮的，而 GitHub 那边
-    三个小时没人跑过。等下去不会有人来测 —— 日志必须直接说出来。
+    这是 2026-10-25 现场那一行的复刻：
+
+        [3:03] GitHub：现在没有在跑；最近一次 10:39 开始（16 分钟前，cancelled）
+
+    那个看守 job 在 Actions 页面上是一行 `in_progress`、看起来像卡住，被取消之后
+    CNB 这边一无所知 —— 旧逻辑要等「最近一次超过 180 分钟」才认输，于是它会安静地
+    等到 60 分钟上限。判据必须是「现在有没有人在守」，不是「上一次多久以前」。
     """
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         _seed_workdir(tmp)
         began = time.time()
         got = _run_wait(
-            tmp, _speed("20261023T000000"), timeout_s=60,
-            gh_runs=[{"status": "completed", "conclusion": "success",
-                      "created_at": _iso(240)}],
+            tmp, _speed("20261023T000000"), timeout_s=60, idle_grace=2,
+            gh_runs=[{"status": "completed", "conclusion": "cancelled",
+                      "created_at": _iso(16)}],
         )
         spent = time.time() - began
         if got.returncode == 0:
-            problems.append("GitHub 三个小时没跑过，等待脚本却当成功退出了")
+            problems.append("没有看守在跑，等待脚本却当成功退出了")
         if spent > 20:
-            problems.append(f"GitHub 明显没在跑，却还是干等了 {spent:.0f} 秒才放弃 —— "
-                            f"上限是 60 秒，说明「没在跑」这条路没生效")
-        if "根本没在跑" not in got.stderr:
-            problems.append(f"放弃时没说清原因（stderr 里没有「根本没在跑」）："
+            problems.append(f"没有看守在跑，却还是干等了 {spent:.0f} 秒才放弃 —— "
+                            f"宽限是 2 秒、上限 60 秒，说明这条路没生效")
+        if "没有看守在跑" not in got.stderr:
+            problems.append(f"放弃时没说清原因（stderr 里没有「没有看守在跑」）："
                             f"{got.stderr[-300:]}")
+        if "Run workflow" not in got.stdout:
+            problems.append(f"日志里没有「点哪里能立刻接上」—— 操作的人只能干看着："
+                            f"{got.stdout[-300:]}")
 
 
 def test_wait_speed_keeps_waiting_while_github_is_alive(problems: list[str]) -> None:
     """D5. **对照样本**：看守正在跑时，同一条路不能提前放弃。
 
-    没有这一条，D4 的「提前放弃」和「脚本一开始就报错」在测试里长得一模一样。
+    没有这一条，D4 的「提前放弃」和「脚本一启动就报错」在测试里长得一模一样。
     """
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         _seed_workdir(tmp)
         got = _run_wait(
-            tmp, _speed("20261023T000000"), timeout_s=4,
+            tmp, _speed("20261023T000000"), timeout_s=4, idle_grace=1,
             gh_runs=[{"status": "in_progress", "conclusion": None,
                       "created_at": _iso(5)}],
         )
-        if "根本没在跑" in got.stderr:
+        if "没有看守在跑" in got.stderr:
             problems.append("看守明明在跑（in_progress），等待脚本却判定它没在跑 —— "
                             "这会让正常的轮次提前失败")
         if got.returncode == 0:
@@ -675,7 +683,7 @@ def main() -> int:
         print(f"· 脚本测试用的 bash：{BASH}")
         test_wait_speed_accepts_matching_round(problems)
         test_wait_speed_rejects_other_round(problems)
-        test_wait_speed_gives_up_when_github_is_dead(problems)
+        test_wait_speed_gives_up_when_nobody_is_watching(problems)
         test_wait_speed_keeps_waiting_while_github_is_alive(problems)
         test_ci_commit_force(problems)
     else:

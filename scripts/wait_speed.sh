@@ -25,6 +25,13 @@
 # ⚠️ **等不到时要能说清「为什么」**。判据只有一条：GitHub Actions 现在到底有没有
 #    在跑 —— 这个可以匿名读公开仓库的 API，不需要令牌。有了它，「没人叫它」和
 #    「叫了但跳过了」才分得开；没有它，日志就只是一百多行一模一样的话。
+#
+# ⚠️ **「没有看守在跑」要当成故障，不能当成「再等等」**。cron 实测 117~148 分钟才
+#    触发一次，所以没人在跑的时候，等下去基本等于等两小时。2026-10-25 就撞上过：
+#    看守那个 job 在 Actions 页面上是一行 `in_progress`、看起来像卡住，被取消之后
+#    CNB 这边什么都不知道，还在按 60 分钟上限安静地轮询。现在的规则是：连续
+#    WAIT_IDLE_GRACE（默认 15 分钟）没有看守在跑就放弃，并把「点哪里能立刻接上」
+#    打出来 —— 与此同时每一行都提醒一次，操作的人不用等失败也能救。
 set -euo pipefail
 
 CANDIDATES="${1:-dist/candidates.json}"
@@ -41,9 +48,17 @@ RAW_BASE="${WAIT_RAW_BASE:-https://raw.githubusercontent.com/${REPO}/${BRANCH}}"
 GH_API="${WAIT_GH_API:-https://api.github.com/repos/${REPO}/actions/workflows/speedtest.yml/runs?per_page=5}"
 # 匿名 API 限流 60 次/小时 ⇒ 探测必须节流，默认 3 分钟一次（20 次/小时）
 GH_PROBE_EVERY="${WAIT_GH_PROBE_EVERY:-180}"
-# 「最近一次运行都过去这么久了、而且现在没有在跑」⇒ 它根本没被触发，再等没意义
-GH_IDLE_MIN="${WAIT_GH_IDLE_MIN:-180}"
-GH_BAD_LIMIT="${WAIT_GH_BAD_LIMIT:-2}"
+# 「没有看守在跑」最多容忍多久（秒）。给 15 分钟宽限是留给「cron 恰好在这一刻起来」，
+# 超过它就放弃 —— 而不是按 60 分钟上限安静地等两小时。
+IDLE_GRACE="${WAIT_IDLE_GRACE:-900}"
+
+elapsed_fmt() {
+  printf '%d:%02d' $(( $1 / 60 )) $(( $1 % 60 ))
+}
+
+dur_fmt() {   # 秒 -> 「3 分钟」/「45 秒」：日志里给人看的
+  if [ "$1" -ge 120 ]; then printf '%d 分钟' $(( $1 / 60 )); else printf '%d 秒' "$1"; fi
+}
 
 if [ ! -s "$CANDIDATES" ]; then
   echo "找不到 $CANDIDATES —— 延迟测速那一段没有产出候选" >&2
@@ -61,14 +76,14 @@ if [ -z "$RUN_ID" ]; then
 fi
 echo "等 GitHub 测速：run_id=$RUN_ID"
 echo "  GitHub 侧是常驻看守（每 30 秒看一眼 CNB），正常情况下 30 秒内就开始测"
-echo "  最多等 ${TIMEOUT_MIN} 分钟；如果它根本没在跑，这里会提前放弃并说明原因"
+echo "  最多等 ${TIMEOUT_MIN} 分钟；如果 $(dur_fmt "$IDLE_GRACE") 内一直没人在看守，会提前放弃并说明原因"
 
 TMP_GH="$(mktemp)"
 trap 'rm -f "$TMP_GH"' EXIT
 
 # 打印一行「GitHub 那边现在什么状态」。退出码：
-#   0 = 有在跑 / 刚跑过（继续等）
-#   1 = 很久没跑且现在没有在跑（等下去没有意义）
+#   0 = 有看守在跑（排队也算）
+#   1 = 没有在看守（不管上一次是什么时候、什么结论）
 #   2 = 查不到（限流 / 不可达，不能据此判断任何事）
 gh_probe() {
   local body
@@ -78,12 +93,11 @@ gh_probe() {
     return 2
   fi
   printf '%s' "$body" > "$TMP_GH"
-  python - "$TMP_GH" "$GH_IDLE_MIN" <<'PY'
+  python - "$TMP_GH" <<'PY'
 import json, sys
 from datetime import datetime, timedelta, timezone
 
 CST = timezone(timedelta(hours=8))
-idle_min = float(sys.argv[2])
 
 
 def parse(text):
@@ -97,7 +111,7 @@ except Exception:
     raise SystemExit(2)
 
 if not runs:
-    print("GitHub：speedtest 工作流一次都没跑过 —— 它没被触发过，等下去没有意义")
+    print("GitHub：speedtest 工作流一次都没跑过 —— 它从来没被触发过")
     raise SystemExit(1)
 
 now = datetime.now(timezone.utc)
@@ -114,19 +128,15 @@ started = parse(newest["created_at"])
 age = (now - started).total_seconds() / 60
 print(f"GitHub：现在没有在跑；最近一次 {started.astimezone(CST):%H:%M} 开始"
       f"（{age:.0f} 分钟前，{newest.get('conclusion') or newest.get('status')}）")
-raise SystemExit(0 if age < idle_min else 1)
+raise SystemExit(1)
 PY
-}
-
-elapsed_fmt() {
-  printf '%d:%02d' $(( $1 / 60 )) $(( $1 % 60 ))
 }
 
 mkdir -p "$(dirname "$SPEED_OUT")"
 START=$(date +%s)
 DEADLINE=$((START + TIMEOUT_S))
 TRIES=0
-GH_BAD=0
+IDLE_SINCE=0       # 第一次发现「没有看守在跑」的时间戳（0 = 现在有人守着）
 NEXT_GH=0          # 下一次问 GitHub 的时间戳（节流用）
 NEXT_REPORT=0      # 下一次说「speed.json 还是上一轮的」的时间戳
 
@@ -141,16 +151,27 @@ while :; do
     RC=0
     STATE="$(gh_probe)" || RC=$?
     echo "  [$(elapsed_fmt "$ELAPSED")] $STATE"
-    if [ "$RC" -eq 1 ]; then GH_BAD=$((GH_BAD + 1)); else GH_BAD=0; fi
-    if [ "$GH_BAD" -ge "$GH_BAD_LIMIT" ]; then
-      {
-        echo "GitHub 那边连续 ${GH_BAD} 次判定「根本没在跑」—— 再等下去不会有人来测"
-        echo "处理办法（都不需要令牌）："
-        echo "  1) 打开 https://github.com/${REPO}/actions/workflows/speedtest.yml"
-        echo "     点 Run workflow；看守起来后这里 30 秒内就会接上"
-        echo "  2) 或者重跑 CNB 这一轮，等下一次看守起来"
-      } >&2
-      exit 1
+    if [ "$RC" -eq 0 ]; then
+      # 有看守 ⇒ 重新计时（中途被人点起来也要能把宽限清零）
+      IDLE_SINCE=0
+    elif [ "$RC" -eq 1 ]; then
+      if [ "$IDLE_SINCE" -eq 0 ]; then
+        IDLE_SINCE=$NOW
+      fi
+      # 每一行都带上「怎么救」：操作的人不用等失败就能处理
+      echo "         ⇒ 打开 https://github.com/${REPO}/actions/workflows/speedtest.yml"
+      echo "           点 Run workflow，30 秒内就会接上（这边会继续等）"
+      if [ $((NOW - IDLE_SINCE)) -ge "$IDLE_GRACE" ]; then
+        {
+          echo "GitHub 那边已经 $(dur_fmt $(( NOW - IDLE_SINCE )))没有看守在跑了 —— 再等下去也不会有人来测"
+          echo "（cron 实测 117~148 分钟才触发一次，靠它自己回来要等两小时）"
+          echo "处理办法（都不需要令牌）："
+          echo "  1) 打开 https://github.com/${REPO}/actions/workflows/speedtest.yml"
+          echo "     点 Run workflow；看守起来后这里 30 秒内就会接上"
+          echo "  2) 或者重跑 CNB 这一轮，等下一次看守起来"
+        } >&2
+        exit 1
+      fi
     fi
   fi
 
