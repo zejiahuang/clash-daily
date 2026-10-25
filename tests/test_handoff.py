@@ -481,6 +481,20 @@ def test_cnb_stage_order(problems: list[str]) -> None:
     elif joined.rfind("ci_commit.sh") < joined.find("verify_dist.py"):
         problems.append("产物提交排在校验之前 —— 校验失败时脏产物已经推上去了")
 
+    # 每个入口只要跑单元测试，就必须先装依赖。
+    # 判据是「push 入口有没有 安装依赖」：`python:3.11` 镜像里没有 PyYAML，
+    # 而测试第一行就 import clashhunter.sources → yaml。漏了这一步，测试当场
+    # ModuleNotFoundError，后面的「提交回仓库」不执行，dist/probe.json 停在旧时间戳
+    # —— 外部看到的只是「推了代码但什么都没变」，2026-10-25 踩过一次。
+    for entry, jobs in cfg["main"].items():
+        for job in jobs:
+            names = [s.get("name") for s in job.get("stages") or []]
+            if "单元测试" in names and "安装依赖" not in names:
+                problems.append(f".cnb.yml 的 {entry} 入口跑了单元测试却没装依赖"
+                                f"（阶段：{names}）")
+            elif "单元测试" in names and names.index("安装依赖") > names.index("单元测试"):
+                problems.append(f".cnb.yml 的 {entry} 入口把「安装依赖」排在单元测试之后")
+
 
 def _git(repo: Path, *args: str, check: bool = True):
     return subprocess.run(

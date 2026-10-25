@@ -153,13 +153,25 @@ main:
       stages: *daily_stages
 
   # ---------- 入口 3：push 只跑自检，不测速 ----------
-  # 每次推代码都会跑一遍（约 1 分钟）。它的产物 dist/probe.json 是「流水线红了
+  # 每次推代码都会跑一遍（约 1.5 分钟）。它的产物 dist/probe.json 是「流水线红了
   # 但看不到日志」时唯一能读到的证据，所以不要删。
+  #
+  # ⚠️ **必须有「安装依赖」这一步。** 单元测试要 import clashhunter.sources →
+  #    `yaml`，而 `python:3.11` 镜像里没有 PyYAML。漏了它，测试在第一行就
+  #    ModuleNotFoundError，于是「提交回仓库」不执行、dist/probe.json 停在旧时间戳，
+  #    而外部看到的只是「推了代码但什么都没变」—— 2026-10-25 就这么踩过一次，
+  #    判断依据只有「10 分钟过去 probe.json 还是昨天的」。
   push:
     - name: env-probe
       docker:
         image: python:3.11
       stages:
+        - name: 安装依赖
+          script: |
+            set -e
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+
         # ⚠️ 单元测试放这里，不只是为了「早发现」：正式那轮的第二个阶段就是
         #    单元测试，它一红整轮就停 —— 而那时已经等到凌晨 2 点了，日志还看不到。
         #    放在 push 里，改完代码当场就知道。耗时约 40 秒。
