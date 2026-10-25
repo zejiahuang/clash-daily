@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -83,20 +84,59 @@ def _text(url: str, *, timeout: float = 10.0) -> str:
 
 
 def source_urls(limit: int = 24) -> list[str]:
-    """从 clashhunter/sources.py 的 SOURCES 块里抠出 https 地址。
+    """每个源站**真正会被下载的那个地址**。
 
-    ⚠️ `limit` 必须大于等于源站数 × 平均地址数。它原来是 12，而源站从 10 个
-       涨到 14 个之后，**后加的源直接被截掉**，自检里看不见 —— 而这份自检
-       存在的唯一理由就是「流水线红了但读不到日志时，仓库里还有证据」。
-       带 `{date}` 的模板地址跳过：它是按日期拼出来的，原样去请求必然 404。
+    以前是从 `SOURCES` 块里正则抠 `"https://..."`。那个做法对 `github-raw` 是错的：
+    它抠到的是目录（`.../main/`），而 GitHub raw 对目录回 404 —— 于是自检里
+    zhuhaiuk / TG-NAV 永远是 FAIL，新加的 cn-news / sunmiao 也一样。
+    **自检探的地址和流水线真正下载的地址不是同一个**，那份 FAIL 就毫无信息量，
+    还会让真正的故障淹没在里面。
+
+    所以现在直接 import SOURCES，按 kind 拼出实际地址：
+      github-raw  -> base + extra[0]（真正的文件名）
+      direct      -> extra 里的接口
+      gh-uploads  -> trees API（它没有固定文件名，靠 API 列目录）
+      其余        -> 索引页/清单页本身
+    导入失败（比如没装 PyYAML）就退回正则，自检不能因为这个整块挂掉。
+
+    ⚠️ `limit` 必须大于等于源站数。它原来是 12，而源站从 10 涨到 14 之后，
+       **后加的源直接被截掉**，自检里看不见 —— 而这份自检存在的唯一理由就是
+       「流水线红了但读不到日志时，仓库里还有证据」。
     """
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from clashhunter.sources import SOURCES
+
+        out: list[str] = []
+        for source in SOURCES:
+            if source.kind == "github-raw":
+                urls = ([source.url.rstrip("/") + "/" + source.extra[0]]
+                        if source.extra else [])
+            elif source.kind == "direct":
+                urls = list(source.extra)
+            elif source.kind == "gh-uploads":
+                urls = [f"https://api.github.com/repos/{source.url}/git/trees/HEAD"]
+            else:
+                # manifest / index / wp-dated / dated-sub：探索引页就够了。
+                # dated-sub 的带日期文件名只能从文章正文里拿到，索引页能通
+                # 就说明「文章还能抓」，这已经是自检能给的最强结论。
+                urls = [source.url]
+            for url in urls:
+                if url not in out:
+                    out.append(url)
+        if out:
+            return out[:limit]
+    except Exception:  # noqa: BLE001 - 退化为正则
+        pass
+
     path = ROOT / "clashhunter" / "sources.py"
     if not path.is_file():
         return []
     text = path.read_text(encoding="utf-8", errors="replace")
     start = text.find("SOURCES")
     block = text[start:] if start >= 0 else text
-    out: list[str] = []
+    out = []
     for url in re.findall(r'"(https://[^"]+)"', block):
         if "{" in url:
             continue
