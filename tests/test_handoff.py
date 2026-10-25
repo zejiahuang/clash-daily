@@ -30,6 +30,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -355,12 +357,25 @@ def _serve(directory: Path, port: int) -> ThreadingHTTPServer:
     return httpd
 
 
-def _run_wait(tmp: Path, served: dict, *, timeout_s: int = 8) -> subprocess.CompletedProcess:
+def _run_wait(tmp: Path, served: dict, *, timeout_s: int = 8,
+              gh_runs: list[dict] | None = None,
+              gh_bad_limit: int = 2) -> subprocess.CompletedProcess:
+    """起一个本地 HTTP 服务当「GitHub 的 raw + Actions API」，跑一遍等待脚本。
+
+    `gh_runs` 给的是 Actions API 的假响应；不给就把探测关掉（`WAIT_GH_API=off`）——
+    真实 API 会限流，测试里不该碰它。
+    """
     web = tmp / "web"
     (web / "dist").mkdir(parents=True, exist_ok=True)
     (web / "dist" / "speed.json").write_text(
         json.dumps(served, ensure_ascii=False), encoding="utf-8")
     port = _free_port()
+    if gh_runs is None:
+        gh_api = "off"
+    else:
+        (web / "runs.json").write_text(
+            json.dumps({"workflow_runs": gh_runs}, ensure_ascii=False), encoding="utf-8")
+        gh_api = f"http://127.0.0.1:{port}/runs.json"
     httpd = _serve(web, port)
     try:
         return subprocess.run(
@@ -370,10 +385,19 @@ def _run_wait(tmp: Path, served: dict, *, timeout_s: int = 8) -> subprocess.Comp
                  "WAIT_RAW_BASE": f"http://127.0.0.1:{port}",
                  "WAIT_INTERVAL": "1",
                  "WAIT_TIMEOUT_S": str(timeout_s),
+                 "WAIT_GH_API": gh_api,
+                 "WAIT_GH_PROBE_EVERY": "0",
+                 "WAIT_GH_BAD_LIMIT": str(gh_bad_limit),
                  "SPEED_OUT": "dist/speed.json"},
         )
     finally:
         httpd.shutdown()
+
+
+def _iso(minutes_ago: float) -> str:
+    """Actions API 的 created_at 格式（UTC，秒级）。"""
+    stamp = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _seed_workdir(tmp: Path) -> None:
@@ -416,34 +440,111 @@ def test_wait_speed_rejects_other_round(problems: list[str]) -> None:
 
 
 def test_workflow_shape(problems: list[str]) -> None:
-    """D3. 工作流的形状：cron 轮询 + 从 CNB 取代码 + 用 run_id 挡掉空跑。"""
+    """D3. 工作流的形状：**常驻看守** + 从 CNB 取代码 + 用 run_id 挡掉重复测速。
+
+    ⚠️ 这里盯的是 2026-10-25 那次事故：公开仓库的 `schedule` 实测每 **117~148 分钟**
+    才触发一次（6 次运行全量对照），而 CNB 那边假设「最多 10 分钟就会跑」。结果是一轮
+    卡了 40 分钟、GitHub 一次都没被叫醒，日志里只有一百多行「还是上一轮的」。
+    所以「cron 起来看一眼就退出」这个形状本身是错的 —— 下面两条断言盯着它别回来。
+    """
     import yaml
 
     cfg = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     on = cfg.get(True) or cfg.get("on") or {}
     if "schedule" not in on:
-        problems.append("speedtest.yml 不是 cron 轮询触发的 —— CNB 侧没有令牌，推不动它")
-    scripts = "\n".join(s.get("run", "") for s in cfg["jobs"]["speed"]["steps"])
+        problems.append("speedtest.yml 没有 schedule —— 看守需要 cron 定期把新的叫起来")
+    job = cfg["jobs"]["speed"]
+    scripts = "\n".join(s.get("run", "") for s in job["steps"])
+    env = {**(cfg.get("env") or {}), **(job.get("env") or {})}
+
+    watch = int(env.get("WATCH_MINUTES") or 0)
+    limit = int(job.get("timeout-minutes") or 0)
+    if watch < 300:
+        problems.append(f"看守窗口只有 {watch} 分钟 —— 公开仓库的 cron 实测 117~148 "
+                        f"分钟才触发一次，窗口比这短就会出现「看守走了、下一个还没来」"
+                        f"的空档，那段时间 CNB 又在白等")
+    if limit < watch:
+        problems.append(f"timeout-minutes={limit} 小于看守窗口 {watch} —— "
+                        f"窗口还没走完 job 就被杀了")
+    if "while " not in scripts or "POLL_SECONDS" not in scripts:
+        problems.append("工作流里没有轮询循环 —— 一个 job 只测一轮就退出，"
+                        "触发又回到「靠 cron 叫醒」，那正是 40 分钟卡死的成因")
+
     if "cnb.cool" not in scripts or "git clone" not in scripts:
         problems.append("工作流没有从 CNB 取代码 —— 它会跑本仓库里那份可能落后的副本")
     if "run_id" not in scripts:
-        problems.append("工作流没有用 run_id 判断「有没有新的一轮」，cron 每次都会白测一遍")
+        problems.append("工作流没有用 run_id 判断「有没有新的一轮」，每轮都会白测一遍")
     if "report.json" not in scripts:
         problems.append("工作流没有等 CNB 收尾（report.json），复制产物会拿到上一轮的")
+    # ⚠️ 测速必须用**gate 判过的那份**候选。用 clone 里那份的话，它随时可能已经
+    #    变成下一轮：speed.json 里的 run_id 是 Y，而 CNB 在等 X，两边都「成功」、
+    #    CNB 一直等到超时，日志里看不出任何异常。
+    if "--in /tmp/candidates.json" not in scripts:
+        problems.append("测速没用 gate 判过的那份候选（--in /tmp/candidates.json）—— "
+                        "clone 里的 candidates.json 可能已经是下一轮，"
+                        "speed.json 的 run_id 就永远对不上")
+    if '"$got" != "$run_id"' not in scripts:
+        problems.append("测速结果没有校验 run_id —— 提交上去 CNB 也认不出来，只会静默等到超时")
     # ⚠️ 两种失败必须分开：`404` = 还没跑过一整轮（跳过，保持绿）；
     #    「取不到」= cnb.cool 从 GitHub 不可达（必须红，否则永远安静地跳过）。
-    #    合在一起写就是一天 144 次红灯，或者永远绿的假象 —— 两种都比报错难查。
+    #    合在一起写就是一天上百次红灯，或者永远绿的假象 —— 两种都比报错难查。
     if '= "404"' not in scripts:
         problems.append("gate 没把 404 当成「还没有新的一轮」—— 还没跑过一整轮时 "
-                        "cron 每 10 分钟红一次，一天 144 次，真出问题反而看不见")
+                        "看守会一直报错，真出问题反而看不见")
     if '!= "200"' not in scripts:
         problems.append("gate 没把「取不到」和「没有新的一轮」分开 —— cnb.cool 从 "
                         "GitHub 不可达时它会永远安静地跳过，一直是绿的")
-    gated = [s for s in cfg["jobs"]["speed"]["steps"]
-             if s.get("if") and "skip" in str(s.get("if"))]
-    if len(gated) < 3:
-        problems.append(f"只有 {len(gated)} 个步骤按 skip 短路 —— 空跑时不该装依赖、"
-                        f"不该测速、不该提交")
+
+
+def test_wait_speed_gives_up_when_github_is_dead(problems: list[str]) -> None:
+    """D4. GitHub 根本没在跑 ⇒ 提前放弃并说明原因，不能干等到超时。
+
+    这就是 2026-10-25 那 40 分钟的场景：speed.json 一直是上一轮的，而 GitHub 那边
+    三个小时没人跑过。等下去不会有人来测 —— 日志必须直接说出来。
+    """
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        _seed_workdir(tmp)
+        began = time.time()
+        got = _run_wait(
+            tmp, _speed("20261023T000000"), timeout_s=60,
+            gh_runs=[{"status": "completed", "conclusion": "success",
+                      "created_at": _iso(240)}],
+        )
+        spent = time.time() - began
+        if got.returncode == 0:
+            problems.append("GitHub 三个小时没跑过，等待脚本却当成功退出了")
+        if spent > 20:
+            problems.append(f"GitHub 明显没在跑，却还是干等了 {spent:.0f} 秒才放弃 —— "
+                            f"上限是 60 秒，说明「没在跑」这条路没生效")
+        if "根本没在跑" not in got.stderr:
+            problems.append(f"放弃时没说清原因（stderr 里没有「根本没在跑」）："
+                            f"{got.stderr[-300:]}")
+
+
+def test_wait_speed_keeps_waiting_while_github_is_alive(problems: list[str]) -> None:
+    """D5. **对照样本**：看守正在跑时，同一条路不能提前放弃。
+
+    没有这一条，D4 的「提前放弃」和「脚本一开始就报错」在测试里长得一模一样。
+    """
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        _seed_workdir(tmp)
+        got = _run_wait(
+            tmp, _speed("20261023T000000"), timeout_s=4,
+            gh_runs=[{"status": "in_progress", "conclusion": None,
+                      "created_at": _iso(5)}],
+        )
+        if "根本没在跑" in got.stderr:
+            problems.append("看守明明在跑（in_progress），等待脚本却判定它没在跑 —— "
+                            "这会让正常的轮次提前失败")
+        if got.returncode == 0:
+            problems.append("拿到的是上一轮的结果却当成功退出了")
+        if "等了" not in got.stderr:
+            problems.append(f"超时那条路没走（stderr 里没有「等了」）：{got.stderr[-300:]}")
+        if "看守在跑" not in got.stdout:
+            problems.append(f"没有把「GitHub 在跑」打进日志，人还是看不出卡在哪："
+                            f"{got.stdout[-300:]}")
 
 
 # ---------------------------------------------------------------- E. 流水线顺序
@@ -574,6 +675,8 @@ def main() -> int:
         print(f"· 脚本测试用的 bash：{BASH}")
         test_wait_speed_accepts_matching_round(problems)
         test_wait_speed_rejects_other_round(problems)
+        test_wait_speed_gives_up_when_github_is_dead(problems)
+        test_wait_speed_keeps_waiting_while_github_is_alive(problems)
         test_ci_commit_force(problems)
     else:
         print("· 跳过脚本测试：本机缺 git / bash / curl")

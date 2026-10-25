@@ -118,15 +118,24 @@ GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）�
 | CNB → GitHub | `curl` `raw.githubusercontent.com` 的公开 raw | 不需要 |
 | 各自写自己的仓库 | `git push` 自己 | 平台自带的凭据 |
 
-代价是**触发变成 GitHub 侧的 cron 轮询**（每 10 分钟），所以一轮从「点了按钮就开始测速」
-变成「点了按钮，最多 10 分钟后开始测速」。换来的是全流程零密钥、没有任何可泄露的东西。
+代价是**触发只能靠 GitHub 自己**：CNB 这边没有任何东西能"叫醒"它，所以 GitHub 侧的
+工作流不是「cron 起来看一眼就退出」，而是**常驻看守** —— 一个 job 活 5.5 小时，每
+30 秒看一眼 CNB 上的 `candidates.json`，看到新的 `run_id` 就测速、交付，然后回到轮询。
+换来的是一轮从「点了按钮」到「开始测速」只差 **30 秒以内**，而全流程零密钥。
 
+> ⚠️ **`schedule` 不是定时器。** 2026-10-25 实测（公开仓库，cron 写的是 `*/10`）：
+> 6 次运行的间隔是 **117 / 126 / 148 / 136 分钟**。那天 CNB 发布候选后等了 40 分钟，
+> GitHub 一次都没被叫醒 —— 日志里只有 119 行「speed.json 还是上一轮的」，看不出
+> 是「没人叫它」还是「叫了但跳过了」。所以「每 10 分钟跑一次」这个形状被换掉了：
+> cron 现在只剩一个作用 —— **保证看守一直有人活着**（看守 5.5 小时，实测 cron 间隔
+> 2~2.5 小时，覆盖得上；公开仓库的 Actions 不计费）。
+>
 > ⚠️ 实测（2026-10-24，CNB 的 `dist/probe.json`）：CNB → `raw.githubusercontent.com`
 > 是 **200 / 204 ms**，所以 `wait_speed.sh` 的轮询不需要任何镜像。
 > 反方向（GitHub runner → `cnb.cool`）没有实测过 —— 见下面那条。
 >
 > ⚠️ 工作流的 gate 必须把「404」和「取不到」分开：`404` = 今天还没有新的一轮（跳过、
-> 保持绿），其他状态 = 真的取不到（红）。合成一个的话，要么一天 144 次红灯，要么
+> 保持绿），其他状态 = 真的取不到（红）。合成一个的话，要么一天上百次红灯，要么
 > cnb.cool 从 GitHub 不可达时永远安静地跳过。判据在 `tests/test_handoff.py`。
 
 ### 3. 三个入口
@@ -135,7 +144,7 @@ GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）�
 
 | 入口 | 触发方式 | 跑什么 | 耗时 |
 |---|---|---|---|
-| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~50 分钟（含最多 10 分钟的 cron 等待） |
+| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~50 分钟（含等 GitHub 看守接上的 ≤1 分钟） |
 | `web_trigger_daily` | 分支详情页的「立即跑一轮」按钮 | 全流程，参数可填 | 同上 |
 | `push` | 每次推代码 | **只跑环境自检**，不测速 | 约 1 分钟 |
 
@@ -151,14 +160,16 @@ GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）�
 |---|---|---|
 | 1 | CNB | `main.py --stage delay` → `dist/candidates.json`（含 `run_id` 和测速参数） |
 | 2 | CNB | `scripts/ci_commit.sh` 把候选提交到**本仓库 main**（公开可读） |
-| 3 | GitHub | `speedtest.yml` 按 cron（每 10 分钟）读一次这个文件，`run_id` 是新的就开始测速 |
+| 3 | GitHub | `speedtest.yml` 是**常驻看守**（一个 job 活 5.5 小时），每 30 秒读一次这个文件，`run_id` 是新的就开始测速 |
 | 4 | GitHub | `main.py --stage speed` → `dist/speed.json`，提交回 GitHub 自己的 main |
-| 5 | CNB | `scripts/wait_speed.sh` 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配 |
+| 5 | CNB | `scripts/wait_speed.sh` 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配（等不到时会去读 GitHub Actions 的公开状态，说清是「没人叫它」还是「叫了但跳过了」） |
 | 6 | CNB | `main.py --stage finish` → 国家判定、去重、重命名、出订阅，提交回 CNB |
 | 7 | GitHub | 等 CNB 的 `report.json` 的 `run_id` 对上，把 5 个产物文件复制回 GitHub |
 
-为什么是 cron 轮询而不是「CNB 推过来触发」：见上面 §三.2 —— 没有令牌可用。
+为什么是「GitHub 自己来取」而不是「CNB 推过来触发」：见上面 §三.2 —— 没有令牌可用。
 `git push` 到 GitHub 需要写权限，而任何能写权限的东西放进公开仓库都会被吊销。
+**注意「自己来取」不等于「靠 cron 定时」**：`schedule` 在公开仓库上实测 2 小时才触发一次，
+所以那边是常驻看守，cron 只负责保证看守一直有人活着。
 
 > ⚠️ **轮询必须比对 `run_id`，不能只看文件存在**。`speed.json` 是提交进仓库的文件，
 > 上一轮那份会一直在。只判存在的话，某轮 GitHub 没跑起来时会安静地读进**上一轮的速度**，
