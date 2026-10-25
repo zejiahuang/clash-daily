@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-25T12:43:52+08:00",
+  "generated_at": "2026-10-25T12:48:52+08:00",
   "system": {
     "nproc": 8,
     "nofile": [
@@ -11,7 +11,7 @@
     "cgroup_mem_max_v1": "17179869184"
   },
   "egress": {
-    "ip": "111.230.93.5",
+    "ip": "159.75.12.57",
     "geo": {
       "status": "success",
       "country": "China",
@@ -27,7 +27,7 @@
       },
       {
         "url": "http://icanhazip.com",
-        "ip": "111.230.93.5"
+        "ip": "159.75.12.57"
       }
     ]
   },
@@ -38,25 +38,25 @@
         "url": "https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 460,
+        "ms": 183,
         "bytes": 6818,
-        "mbps": 0.01,
+        "mbps": 0.04,
         "err": null
       },
       {
         "url": "https://gh-proxy.com/https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 201,
+        "ms": 183,
         "bytes": 6818,
-        "mbps": 0.03,
+        "mbps": 0.04,
         "err": null
       },
       {
         "url": "https://cdn.akaere.online/https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
         "ok": true,
         "status": 200,
-        "ms": 774,
+        "ms": 757,
         "bytes": 6818,
         "mbps": 0.01,
         "err": null
@@ -68,7 +68,7 @@
       "url": "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
       "ok": true,
       "status": 200,
-      "ms": 645,
+      "ms": 640,
       "bytes": 65536,
       "mbps": 0.1,
       "err": null,
@@ -82,27 +82,27 @@
         "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 1346,
+        "ms": 1044,
         "bytes": 1048576,
-        "mbps": 0.74,
+        "mbps": 0.96,
         "err": null
       },
       {
         "url": "https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 790,
+        "ms": 828,
         "bytes": 1048576,
-        "mbps": 1.27,
+        "mbps": 1.21,
         "err": null
       },
       {
         "url": "https://cdn.akaere.online/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
         "ok": true,
         "status": 206,
-        "ms": 2284,
+        "ms": 6647,
         "bytes": 1048576,
-        "mbps": 0.44,
+        "mbps": 0.15,
         "err": null
       }
     ]
@@ -112,9 +112,9 @@
       "url": "https://speed.cloudflare.com/__down?bytes=1000000",
       "ok": true,
       "status": 200,
-      "ms": 2252,
+      "ms": 1750,
       "bytes": 1000000,
-      "mbps": 0.42,
+      "mbps": 0.54,
       "err": null
     }
   ],
@@ -125,19 +125,19 @@
     "single": {
       "conns": 1,
       "ok": 1,
-      "bytes": 983040,
-      "mbps": 0.25,
+      "bytes": 2424832,
+      "mbps": 0.45,
       "errs": []
     },
     "many": {
       "conns": 6,
       "ok": 6,
-      "bytes": 22980736,
-      "mbps": 3.92,
+      "bytes": 30815744,
+      "mbps": 5.43,
       "errs": []
     },
-    "ratio": 15.68,
-    "verdict": "单连接被限速（并发/单连 15.68×），管道按并发总量算；管道 ≈ 3.92 MB/s < 门槛 20 ⇒ 初筛按「每连接 0.5 MB/s」开 7 并发 × 256 KB，每连接读数天花板约 0.56 MB/s（再快的节点靠 1 并发复测量真值）"
+    "ratio": 12.07,
+    "verdict": "单连接被限速（并发/单连 12.07×），管道按并发总量算；管道 ≈ 5.43 MB/s < 门槛 20 ⇒ 初筛按「每连接 0.5 MB/s」开 10 并发 × 256 KB，每连接读数天花板约 0.54 MB/s（再快的节点靠 1 并发复测量真值）"
   },
   "purity": {
     "ip_api": {
@@ -152,9 +152,9 @@
       "fraud": 0,
       "url": "https://scamalytics.com/ip/104.16.132.229",
       "status": 200,
-      "ms": 1397,
+      "ms": 943,
       "bytes": 35358,
-      "mbps": 0.02,
+      "mbps": 0.04,
       "err": null
     }
   },
@@ -163,7 +163,7 @@
       "url": "https://manifest.dpdns.org/today/",
       "ok": true,
       "status": 200,
-      "ms": 633,
+      "ms": 705,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -172,7 +172,7 @@
       "url": "https://clash-node.com/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 2245,
+      "ms": 783,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -181,7 +181,7 @@
       "url": "https://v2rayfree.org/",
       "ok": true,
       "status": 200,
-      "ms": 2207,
+      "ms": 1005,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -190,7 +190,7 @@
       "url": "https://stelliberty.com/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 1189,
+      "ms": 781,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -199,7 +199,7 @@
       "url": "https://lancex.net/free-node/",
       "ok": true,
       "status": 200,
-      "ms": 845,
+      "ms": 1150,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -208,7 +208,7 @@
       "url": "https://nodetoolbox.net/free-nodes/",
       "ok": true,
       "status": 200,
-      "ms": 703,
+      "ms": 700,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -217,7 +217,7 @@
       "url": "https://clashsuburl.com/free-nodes/",
       "ok": true,
       "status": 200,
-      "ms": 546,
+      "ms": 720,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -226,16 +226,16 @@
       "url": "https://raw.githubusercontent.com/zhuhaiuk/free-nodes/main/clash_config.yaml",
       "ok": true,
       "status": 200,
-      "ms": 184,
+      "ms": 403,
       "bytes": 2048,
-      "mbps": 0.01,
+      "mbps": 0.0,
       "err": null
     },
     {
       "url": "https://raw.githubusercontent.com/TG-NAV/nodeshare/main/clash.yaml",
       "ok": true,
       "status": 200,
-      "ms": 389,
+      "ms": 185,
       "bytes": 0,
       "mbps": null,
       "err": null
@@ -244,7 +244,7 @@
       "url": "https://api.github.com/repos/freeclashverge/freeclashverge.github.io/git/trees/HEAD",
       "ok": true,
       "status": 200,
-      "ms": 479,
+      "ms": 443,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
@@ -253,7 +253,7 @@
       "url": "https://raw.githubusercontent.com/hello-world-1989/cn-news/main/clash-free.yaml",
       "ok": true,
       "status": 200,
-      "ms": 382,
+      "ms": 208,
       "bytes": 2048,
       "mbps": 0.01,
       "err": null
@@ -262,7 +262,7 @@
       "url": "https://raw.githubusercontent.com/sunmiao4458/free-proxy-airport/main/output/clash.yaml",
       "ok": true,
       "status": 200,
-      "ms": 388,
+      "ms": 177,
       "bytes": 2048,
       "mbps": 0.01,
       "err": null
@@ -271,20 +271,20 @@
       "url": "https://tian.zmxoo.xyz/subapi",
       "ok": true,
       "status": 200,
-      "ms": 2572,
+      "ms": 175,
       "bytes": 2048,
-      "mbps": 0.0,
+      "mbps": 0.01,
       "err": null
     },
     {
       "url": "https://xinshoucun.net/category/freenode",
       "ok": true,
       "status": 200,
-      "ms": 963,
+      "ms": 1037,
       "bytes": 2048,
       "mbps": 0.0,
       "err": null
     }
   ],
-  "elapsed_s": 39.6
+  "elapsed_s": 35.6
 }
