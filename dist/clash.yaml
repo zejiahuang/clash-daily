@@ -1,10 +1,11 @@
 # ============================================================
 # 免费节点聚合订阅 · 自动生成，请勿手动编辑
-# 生成时间：2026-10-25 03:08:34 +0800
+# 生成时间：2026-10-25 13:05:45 +0800
 # 节点数量：80
-# 覆盖地区：美国×16、英国×9、德国×6、荷兰×3、加拿大×2、爱尔兰×2、中国×1、中国台湾×1、中国香港×1、丹麦×1、以色列×1、俄罗斯×1、保加利亚×1、克罗地亚×1、冰岛×1、匈牙利×1、卢森堡×1、印度×1、印度尼西亚×1、厄瓜多尔×1、塞尔维亚×1、墨西哥×1、奥地利×1、巴西×1、希腊×1、意大利×1、拉脱维亚×1、挪威×1、捷克×1、新加坡×1、日本×1、格鲁吉亚×1、比利时×1、法国×1、波兰×1、波黑×1、泰国×1、爱沙尼亚×1、瑞典×1、瑞士×1、罗马尼亚×1、芬兰×1、葡萄牙×1、西班牙×1、越南×1、阿尔巴尼亚×1、韩国×1、马来西亚×1
-# 节点名格式：国家-序号-实测平均速度（MB/S）
-# 测速位置：美国·Phoenix（该速度是这台机器到节点的实测值，不代表你所在网络的速度）
+# 覆盖地区：美国×16、荷兰×11、俄罗斯×6、德国×6、中国台湾×2、中国香港×2、加拿大×2、印度尼西亚×2、意大利×2、新加坡×2、日本×2、法国×2、波兰×2、泰国×2、瑞典×2、罗马尼亚×2、英国×2、西班牙×2、印度×1、喀麦隆×1、墨西哥×1、拉脱维亚×1、捷克×1、澳大利亚×1、爱尔兰×1、立陶宛×1、芬兰×1、越南×1、阿尔巴尼亚×1、韩国×1、马来西亚×1
+# 节点名格式：国家-序号-实测平均速度（MB/S）·净N（出口 IP 纯净度 0~100）
+# 测速位置：美国·Cheyenne（该速度是这台机器到节点的实测值，不代表你所在网络的速度）
+# 纯净度：79/80 个有数据，中位 55；分数越高越像干净的住宅 IP（机房/代理/移动网络会扣分，未知时不写这个后缀）
 # 免费节点随时可能失效，仅供学习与技术研究使用
 # ============================================================
 mixed-port: 7890
@@ -15,87 +16,70 @@ ipv6: false
 unified-delay: true
 external-controller: 127.0.0.1:9090
 proxies:
-- name: 美国-01-132.0MB/S
+- name: 美国-01-60.4MB/S·净55
   type: http
-  server: 138.199.35.198
-  port: 9002
-  udp: true
-  password: 'null'
-  tls: true
-  sni: 138.199.35.198
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  username: 'null'
-  delay: 249
-- name: 美国-02-121.3MB/S
-  type: http
-  server: 138.199.35.211
-  port: 9002
-  udp: true
-  password: 'null'
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  username: 'null'
-  delay: 281
-- name: 美国-03-112.5MB/S
-  type: http
-  server: 138.199.35.214
-  port: 9002
+  server: 45.63.38.134
+  port: 443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 270
-- name: 美国-04-103.0MB/S
+  delay: 390
+- name: 美国-02-57.5MB/S·净75
+  type: http
+  server: 64.98.50.100
+  port: 443
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  delay: 222
+- name: 美国-03-57.4MB/S·净22
   type: http
   server: 138.199.35.220
   port: 9002
   udp: true
-  password: 'null'
+  password: None
   tls: true
   skip-cert-verify: true
   sub_tag: P002-260618
-  username: 'null'
-  delay: 259
-- name: 美国-05-95.5MB/S
+  delay: 941
+- name: 美国-04-56.6MB/S·净11
   type: http
-  server: jgwynphotoarts.pro
+  server: goedkoopgeluid.icu
   port: 443
   udp: true
+  password: sni="goedkoopgeluid.icu"
   tls: true
-  sni: jgwynphotoarts.pro
+  sni: goedkoopgeluid.icu
+  skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 163
-- name: 美国-06-95.3MB/S
+  username: None
+  delay: 171
+- name: 美国-05-56.2MB/S·净54
   type: http
-  server: zebpay.site
-  port: 443
-  udp: true
-  tls: true
-  sni: zebpay.site
-  sub_tag: R002-260618
-  delay: 160
-- name: 美国-07-95.0MB/S
-  type: http
-  server: 138.199.35.217
+  server: 138.199.35.209
   port: 9002
   udp: true
   tls: true
   skip-cert-verify: true
-  delay: 311
-- name: 美国-08-90.7MB/S
+  sub_tag: R002-260618
+  delay: 274
+- name: 美国-06-55.2MB/S·净37
   type: http
-  server: efr-marktplatz.club
+  server: mmgr.club
   port: 443
   udp: true
+  password: None
   tls: true
-  sni: efr-marktplatz.club
-  sub_tag: R002-260618
-  delay: 165
-- name: 美国-09-90.0MB/S
+  sni: mmgr.club
+  skip-cert-verify: true
+  sub_tag: P002-260618
+  delay: 594
+- name: 美国-07-54.7MB/S·净55
   type: http
-  server: 138.199.35.196
+  server: 138.199.35.207
   port: 9002
   udp: true
   password: 'null'
@@ -103,29 +87,8 @@ proxies:
   skip-cert-verify: true
   sub_tag: P002-260618
   username: 'null'
-  delay: 255
-- name: 美国-10-89.2MB/S
-  type: http
-  server: jewelscollecti.icu
-  port: 443
-  udp: true
-  tls: true
-  sni: jewelscollecti.icu
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 178
-- name: 美国-11-88.9MB/S
-  type: http
-  server: carolinafreigh.fun
-  port: 443
-  udp: true
-  password: 'null'
-  tls: true
-  sni: carolinafreigh.fun
-  sub_tag: R002-260618
-  username: 'null'
-  delay: 154
-- name: 美国-12-88.6MB/S
+  delay: 296
+- name: 美国-08-53.6MB/S·净55
   type: http
   server: 138.199.35.201
   port: 9002
@@ -136,199 +99,131 @@ proxies:
   skip-cert-verify: true
   sub_tag: R002-260618
   username: 'null'
-  delay: 283
-- name: 美国-13-87.7MB/S
+  delay: 257
+- name: 美国-09-50.2MB/S·净21
   type: http
-  server: 138.199.35.216
-  port: 9002
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 268
-- name: 美国-14-86.7MB/S
-  type: http
-  server: 138.199.35.200
-  port: 9002
-  udp: true
-  password: 'null'
-  tls: true
-  skip-cert-verify: true
-  username: 'null'
-  delay: 266
-- name: 美国-15-85.6MB/S
-  type: http
-  server: webdrone.club
+  server: purposebydesig.club
   port: 443
   udp: true
   password: None
   tls: true
-  sni: webdrone.club
+  sni: purposebydesig.club
   skip-cert-verify: false
-  sub_tag: P002-260618
-  delay: 167
-- name: 美国-16-84.8MB/S
-  type: http
-  server: 138.199.35.205
-  port: 9002
-  udp: true
-  password: 'null'
-  tls: true
-  skip-cert-verify: true
   sub_tag: R002-260618
-  username: 'null'
-  delay: 907
-- name: 英国-01-13.0MB/S
+  delay: 157
+- name: 美国-10-46.1MB/S·净12
   type: http
-  server: 84.17.50.214
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 215
-- name: 英国-02-13.0MB/S
-  type: http
-  server: 212.102.63.61
+  server: fullmanfirm.icu
   port: 443
   udp: true
   tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 193
-- name: 英国-03-13.0MB/S
-  type: http
-  server: 212.102.63.1
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 194
-- name: 英国-04-13.0MB/S
-  type: http
-  server: 185.164.138.156
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 203
-- name: 英国-05-12.9MB/S
-  type: http
-  server: 84.17.50.193
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 231
-- name: 英国-06-12.9MB/S
-  type: http
-  server: 212.102.63.31
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 194
-- name: 英国-07-12.6MB/S
-  type: http
-  server: 37.120.233.50
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 246
-- name: 英国-08-12.5MB/S
-  type: http
-  server: 37.120.233.18
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 261
-- name: 英国-09-12.1MB/S
-  type: http
-  server: 84.233.178.33
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 216
-- name: 德国-01-18.1MB/S
-  type: vless
-  server: freesocks.work
-  port: 2053
-  udp: true
-  uuid: aa5d861a-7799-41a7-bdf4-7a6414cf98fd
-  tls: true
-  servername: uwu.blueknightnet.qzz.io
-  alpn:
-  - h2
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /@BlueKnight_net--@BlueKnight_net--@BlueKnight_net--@BlueKnight_net--@BlueKnight_net--@BlueKnight_net
-    headers:
-      Host: uwu.blueknightnet.qzz.io
-  packet-encoding: xudp
-  delay: 244
-- name: 德国-02-11.8MB/S
-  type: http
-  server: 149.36.50.157
-  port: 443
-  udp: true
-  password: None
-  tls: true
+  sni: fullmanfirm.icu
   skip-cert-verify: true
   sub_tag: R002-260618
   delay: 204
-- name: 德国-03-11.8MB/S
+- name: 美国-11-36.6MB/S·净15
   type: http
-  server: 79.127.156.177
+  server: jgwynphotoarts.pro
   port: 443
   udp: true
   tls: true
-  skip-cert-verify: true
+  sni: jgwynphotoarts.pro
   sub_tag: R002-260618
-  delay: 197
-- name: 德国-04-11.7MB/S
+  delay: 159
+- name: 美国-12-32.0MB/S·净12
   type: http
-  server: 149.36.50.129
+  server: zebpay.site
   port: 443
   udp: true
   password: None
   tls: true
+  sni: zebpay.site
+  skip-cert-verify: false
+  sub_tag: P002-260618
+  delay: 586
+- name: 美国-13-31.7MB/S·净26
+  type: http
+  server: kimberlymilano.icu
+  port: 443
+  udp: true
+  password: 'null'
+  tls: true
+  sni: kimberlymilano.icu
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  username: 'null'
+  delay: 157
+- name: 美国-14-30.5MB/S·净11
+  type: http
+  server: jewelscollecti.icu
+  port: 443
+  udp: true
+  tls: true
+  sni: jewelscollecti.icu
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 207
-- name: 德国-05-11.7MB/S
+  delay: 153
+- name: 美国-15-29.7MB/S·净24
   type: http
-  server: 149.36.50.1
+  server: 147.182.216.4
+  port: 443
+  udp: true
+  password: e4b72b531a2d10900519
+  tls: true
+  sni: 93b6d804.acsnet.co
+  sub_tag: R002-260618
+  username: testuser1
+  delay: 752
+- name: 美国-16-29.1MB/S·净48
+  type: http
+  server: 129.212.181.253
+  port: 8443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 251
+- name: 荷兰-01-12.4MB/S·净55
+  type: http
+  server: 51.159.225.197
+  port: 19362
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 235
+- name: 荷兰-02-12.2MB/S·净55
+  type: http
+  server: 51.158.243.91
   port: 443
   udp: true
   password: None
   tls: true
   skip-cert-verify: true
   sub_tag: P002-260618
-  delay: 1334
-- name: 德国-06-11.6MB/S
+  delay: 234
+- name: 荷兰-03-12.2MB/S·净55
   type: http
-  server: 213.177.229.161
-  port: 9443
+  server: 51.159.225.196
+  port: 23856
   udp: true
+  password: 'null'
   tls: true
   skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 245
-- name: 荷兰-01-12.4MB/S
+  sub_tag: K001-260618
+  username: 'null'
+  delay: 217
+- name: 荷兰-04-12.0MB/S·净39
+  type: http
+  server: 84.17.47.149
+  port: 9002
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  delay: 233
+- name: 荷兰-05-12.0MB/S·净48
   type: http
   server: 82.196.9.7
   port: 443
@@ -338,76 +233,229 @@ proxies:
   sni: 52c40907.acsnet.co
   sub_tag: R002-260618
   username: testuser1
-  delay: 328
-- name: 荷兰-02-11.6MB/S
-  type: http
-  server: 84.17.47.125
-  port: 9002
+  delay: 289
+- name: 荷兰-06-12.0MB/S·净55
+  type: socks5
+  server: 51.15.20.32
+  port: 1088
   udp: true
-  tls: true
   skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 211
-- name: 荷兰-03-11.6MB/S
+  sub_tag: K001-260618
+  delay: 235
+- name: 荷兰-07-11.9MB/S·净80
+  type: vless
+  server: 5.129.234.167
+  port: 12213
+  udp: true
+  uuid: 7c464358-6c89-4623-bd20-7c7bcd51bc55
+  tls: true
+  servername: music.yandex.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: kTKM-s7XF0s878Ydmq1KeZFiGT6k1Bw_rLE79s1l1jI
+    short-id: 6a29a03b21
+  network: tcp
+  tfo: false
+  delay: 289
+- name: 荷兰-08-11.9MB/S·净55
   type: http
-  server: 84.17.47.123
-  port: 9002
+  server: 5.255.118.82
+  port: 443
   udp: true
   password: None
   tls: true
   skip-cert-verify: true
   sub_tag: P002-260618
-  delay: 221
-- name: 加拿大-01-26.2MB/S
+  delay: 233
+- name: 荷兰-09-11.8MB/S·净55
   type: http
-  server: 198.44.157.19
-  port: 9443
+  server: 84.17.47.123
+  port: 9002
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 218
-- name: 加拿大-02-19.8MB/S
-  type: http
-  server: 206.223.183.21
+  delay: 219
+- name: 荷兰-10-11.3MB/S·净50
+  type: trojan
+  server: 138.68.131.253
   port: 443
   udp: true
+  password: humanity
+  sni: www.pleadcourt.org
+  alpn:
+  - http/1.1
+  client-fingerprint: unsafe
+  network: ws
+  ws-opts:
+    path: /assignment
+  delay: 311
+- name: 荷兰-11-10.6MB/S·净55
+  type: http
+  server: 185.53.129.141
+  port: 9090
+  udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 327
-- name: 爱尔兰-01-12.9MB/S
+  delay: 209
+- name: 俄罗斯-01-11.7MB/S·净75
+  type: vless
+  server: 45.128.78.176
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  sni: ozon.ru
+  servername: ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 217
+- name: 俄罗斯-02-11.6MB/S·净80
+  type: vless
+  server: 193.160.140.119
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  sni: ozon.ru
+  servername: ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 843
+- name: 俄罗斯-03-11.0MB/S·净80
+  type: vless
+  server: 193.160.140.118
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  sni: ozon.ru
+  servername: ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 203
+- name: 俄罗斯-04-10.9MB/S·净75
+  type: vless
+  server: 147.45.47.107
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  servername: abuse.ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+    short-id: ''
+  network: tcp
+  tfo: false
+  delay: 197
+- name: 俄罗斯-05-10.5MB/S·净80
+  type: vless
+  server: 193.160.141.8
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  servername: ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+    short-id: ''
+  network: tcp
+  tfo: false
+  delay: 213
+- name: 俄罗斯-06-10.3MB/S·净75
+  type: vless
+  server: 45.151.71.167
+  port: 443
+  udp: true
+  uuid: 680e92ac-1688-49e0-af96-7327fbc30ce8
+  tls: true
+  sni: abuse.ozon.ru
+  servername: abuse.ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 230
+- name: 德国-01-11.3MB/S·净76
   type: http
-  server: 18.200.158.139
+  server: 213.109.163.119
   port: 443
   udp: true
   password: None
   tls: true
   skip-cert-verify: true
-  sub_tag: K001-260618
-  delay: 213
-- name: 爱尔兰-02-12.3MB/S
+  sub_tag: P002-260618
+  delay: 207
+- name: 德国-02-11.2MB/S·净55
   type: http
-  server: 34.249.214.108
+  server: 158.173.154.5
+  port: 9002
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 197
+- name: 德国-03-10.7MB/S·净50
+  type: http
+  server: 158.173.154.1
+  port: 9002
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 200
+- name: 德国-04-10.5MB/S·净55
+  type: http
+  server: 159.69.94.125
   port: 443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 221
-- name: 中国-01-1.2MB/S
-  type: vmess
-  server: 120.48.133.162
-  port: 10086
+  delay: 201
+- name: 德国-05-10.0MB/S·净55
+  type: http
+  server: 116.202.172.99
+  port: 443
   udp: true
-  uuid: a01e5d56-464f-45b9-b600-164db4700162
-  alterId: 0
-  cipher: auto
-  tls: false
+  tls: true
   skip-cert-verify: true
-  network: ws
-  delay: 120
-- name: 中国台湾-01-0.1MB/S
+  sub_tag: R002-260618
+  delay: 214
+- name: 德国-06-9.4MB/S·净55
+  type: http
+  server: 158.173.154.3
+  port: 9002
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  delay: 211
+- name: 中国台湾-01-8.0MB/S·净100
   type: http
   server: twmoon1-cdn-route.couldflare-cdn.com
   port: 1443
@@ -416,105 +464,51 @@ proxies:
   tls: true
   sni: twmoon1-cdn-route.couldflare-cdn.com
   username: mrwdfNTD8M79LCukCieldrqZWqs=
-  delay: 306
-- name: 中国香港-01-8.6MB/S
+  delay: 57
+- name: 中国台湾-02-0.4MB/S·净100
+  type: anytls
+  server: 684616s4.df6h451rh.xin
+  port: 443
+  udp: true
+  password: 0324fbc29561
+  sni: px.ads.linkedin.com
+  skip-cert-verify: true
+  delay: 63
+- name: 中国香港-01-7.9MB/S·净55
   type: http
   server: 119.28.24.235
   port: 3128
-  udp: true
   tls: true
   skip-cert-verify: true
-  sub_tag: P002-260618
   delay: 9
-- name: 丹麦-01-12.1MB/S
-  type: http
-  server: 185.245.84.50
-  port: 9443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 206
-- name: 以色列-01-9.3MB/S
-  type: http
-  server: 169.150.248.17
+- name: 中国香港-02-3.1MB/S·净100
+  type: anytls
+  server: 56481.df6h451rh.xin
   port: 443
   udp: true
-  password: None
-  tls: true
+  password: 0324fbc29561
+  sni: images.ctfassets.net
   skip-cert-verify: true
-  sub_tag: K001-260618
-  delay: 314
-- name: 俄罗斯-01-10.0MB/S
-  type: vless
-  server: 45.9.118.177
-  port: 8443
-  udp: true
-  uuid: 88c4ce99-31f1-4329-912d-2a3564b3d58b
-  tls: true
-  servername: apple.com
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-    short-id: ''
-  packet-encoding: xudp
-  delay: 191
-- name: 保加利亚-01-10.0MB/S
+  delay: 183
+- name: 加拿大-01-39.5MB/S·净57
   type: http
-  server: 109.204.88.17
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 251
-- name: 克罗地亚-01-10.9MB/S
-  type: http
-  server: 154.47.29.161
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 242
-- name: 冰岛-01-11.7MB/S
-  type: http
-  server: 185.165.170.1
+  server: 198.44.157.19
   port: 9443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 261
-- name: 匈牙利-01-10.1MB/S
+  delay: 225
+- name: 加拿大-02-39.2MB/S·净55
   type: http
-  server: 146.70.203.18
-  port: 443
+  server: 198.44.157.27
+  port: 9443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 275
-- name: 卢森堡-01-11.3MB/S
-  type: http
-  server: 185.221.132.242
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 228
-- name: 印度-01-1.8MB/S
-  type: http
-  server: 103.173.135.190
-  port: 3128
-  udp: true
-  skip-cert-verify: true
-  delay: 271
-- name: 印度尼西亚-01-7.9MB/S
+  delay: 239
+- name: 印度尼西亚-01-7.2MB/S·净75
   type: http
   server: 103.86.116.118
   port: 443
@@ -522,27 +516,260 @@ proxies:
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 362
-- name: 厄瓜多尔-01-13.7MB/S
+  delay: 214
+- name: 印度尼西亚-02-4.2MB/S·净100
   type: http
-  server: 38.165.231.71
-  port: 9443
+  server: 178.248.73.58
+  port: 443
   udp: true
   tls: true
   skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 315
-- name: 塞尔维亚-01-10.6MB/S
+  sub_tag: R002-260618
+  delay: 358
+- name: 意大利-01-4.3MB/S·净80
+  type: ss
+  server: 202.50.253.81
+  port: 19999
+  udp: true
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+  delay: 267
+- name: 意大利-02-4.2MB/S·净80
+  type: ss
+  server: 202.50.253.99
+  port: 19999
+  udp: true
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+  delay: 991
+- name: 新加坡-01-7.8MB/S·净80
+  type: ss
+  server: 18.143.63.164
+  port: 2377
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: t0srmdxrm3xyjnvqz9ewlxb2myq7rjuv
+  plugin: obfs
+  plugin-opts:
+    host: 817aa69.default.nintendo.com:112719
+    mode: tls
+  delay: 50
+- name: 新加坡-02-7.7MB/S·净80
+  type: ss
+  server: 13.215.227.70
+  port: 2377
+  udp: true
+  cipher: chacha20-ietf-poly1305
+  password: t0srmdxrm3xyjnvqz9ewlxb2myq7rjuv
+  plugin: obfs
+  plugin-opts:
+    mode: tls
+    host: 817aa69.default.nintendo.com:112719
+  delay: 49
+- name: 日本-01-3.1MB/S
   type: http
-  server: 146.70.221.34
-  port: 443
+  server: 133.18.200.207
+  port: 343
   udp: true
   password: None
   tls: true
   skip-cert-verify: true
   sub_tag: P002-260618
-  delay: 236
-- name: 墨西哥-01-0.1MB/S
+  delay: 210
+- name: 日本-02-0.7MB/S·净80
+  type: vless
+  server: funagfrdfs.alixxplay.com
+  port: 35544
+  udp: true
+  uuid: 57beeeb0-03fc-4fc9-94da-7604488a7134
+  tls: true
+  servername: iosapps.itunes.apple.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: HrcXRHtsitc_AVlN-_8fZuRgaP-Mqa_9JJotI9OnkVc
+    short-id: 25c79e5856c7
+  delay: 177
+- name: 法国-01-10.6MB/S·净55
+  type: http
+  server: 87.98.174.157
+  port: 6103
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 201
+- name: 法国-02-9.8MB/S·净75
+  type: http
+  server: 82.65.162.76
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 195
+- name: 波兰-01-12.1MB/S·净75
+  type: vless
+  server: pl1.mycloud1.org
+  port: 443
+  udp: true
+  uuid: 605dea9b-b485-45c9-af9b-cc2b0195023c
+  tls: true
+  sni: pl1.mycloud1.org
+  servername: pl1.mycloud1.org
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: Su5ULcRQKF-0DJIHZeTNEnXHBpyQtizmUrcNIYhZI0E
+    short-id: afee962d
+  network: tcp
+  delay: 227
+- name: 波兰-02-10.3MB/S·净55
+  type: http
+  server: 151.115.54.133
+  port: 443
+  udp: true
+  password: 'null'
+  tls: true
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  username: 'null'
+  delay: 264
+- name: 泰国-01-5.0MB/S·净70
+  type: vless
+  server: 104.18.26.90
+  port: 443
+  udp: true
+  uuid: 3c52e091-6714-4915-949f-2149fe69951b
+  tls: true
+  servername: v2ray.simspeedup.com
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: v2ray.simspeedup.com
+  packet-encoding: xudp
+  delay: 365
+- name: 泰国-02-2.7MB/S·净55
+  type: socks5
+  server: 47.87.97.94
+  port: 1080
+  udp: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+  delay: 763
+- name: 瑞典-01-4.0MB/S·净47
+  type: vless
+  server: 91.242.228.29
+  port: 443
+  udp: true
+  uuid: 605dea9b-b485-45c9-af9b-cc2b0195023c
+  tls: true
+  servername: se1.mycloud1.org
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  skip-cert-verify: false
+  reality-opts:
+    public-key: Su5ULcRQKF-0DJIHZeTNEnXHBpyQtizmUrcNIYhZI0E
+    short-id: afee962d
+  network: tcp
+  tfo: false
+  delay: 233
+- name: 瑞典-02-3.1MB/S·净75
+  type: http
+  server: 217.210.129.243
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 244
+- name: 罗马尼亚-01-8.9MB/S·净52
+  type: http
+  server: 193.176.84.40
+  port: 9002
+  udp: true
+  tls: true
+  sni: www.bing.com
+  skip-cert-verify: true
+  delay: 261
+- name: 罗马尼亚-02-8.5MB/S·净55
+  type: http
+  server: 193.176.84.29
+  port: 9002
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: P002-260618
+  delay: 252
+- name: 英国-01-10.9MB/S·净18
+  type: vless
+  server: 185.88.173.215
+  port: 443
+  udp: true
+  uuid: fd0a5c32-afc0-4d57-b95a-ca6ec8f93e87
+  tls: true
+  servername: gb.ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 1244
+- name: 英国-02-5.0MB/S·净18
+  type: vless
+  server: 51.77.108.218
+  port: 8443
+  udp: true
+  uuid: 8a1f8853-9a71-4ef2-a64c-4f0a94c2e14b
+  tls: true
+  servername: ozon.ru
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: tcp
+  delay: 211
+- name: 西班牙-01-12.5MB/S·净55
+  type: http
+  server: 130.195.250.34
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 272
+- name: 西班牙-02-3.1MB/S·净75
+  type: http
+  server: 80.24.34.107
+  port: 8090
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 268
+- name: 印度-01-6.5MB/S·净62
+  type: trojan
+  server: in.tronsg.com
+  port: 443
+  udp: true
+  password: Trojan@82164024
+  sni: in.tronsg.com
+  skip-cert-verify: true
+  delay: 353
+- name: 喀麦隆-01-0.1MB/S·净95
+  type: http
+  server: 102.244.78.61
+  port: 8084
+  udp: true
+  tls: false
+  skip-cert-verify: false
+  sub_tag: M001-260618
+  delay: 563
+- name: 墨西哥-01-6.3MB/S·净0
   type: http
   server: 45.134.9.41
   port: 443
@@ -551,337 +778,205 @@ proxies:
   sni: 991cc80f13caf81d3426ddebb2da7f49-240d6105b6ef86f0.apache-iv.com
   skip-cert-verify: true
   sub_tag: R002-260618
-  delay: 228
-- name: 奥地利-01-11.0MB/S
+  delay: 224
+- name: 拉脱维亚-01-9.2MB/S·净75
   type: http
-  server: 146.70.244.2
+  server: 185.219.159.16
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 299
+- name: 捷克-01-3.0MB/S·净75
+  type: http
+  server: 5.35.100.14
+  port: 8443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 269
+- name: 澳大利亚-01-0.2MB/S·净55
+  type: vless
+  server: funagfrdfs.alixxplay.com
+  port: 54528
+  udp: true
+  uuid: 57beeeb0-03fc-4fc9-94da-7604488a7134
+  tls: true
+  servername: www.apple.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: 7GvJVbR6BRhtrc8-rcZvB8qTFUF1LPeM_MmoZ04mBxo
+    short-id: 54cca3c1c1c7
+  delay: 214
+- name: 爱尔兰-01-13.0MB/S·净80
+  type: http
+  server: 18.200.158.139
+  port: 443
+  udp: true
+  password: None
+  tls: true
+  skip-cert-verify: true
+  sub_tag: K001-260618
+  delay: 237
+- name: 立陶宛-01-9.4MB/S·净75
+  type: http
+  server: 89.124.11.9
+  port: 443
+  udp: true
+  tls: true
+  skip-cert-verify: true
+  sub_tag: R002-260618
+  delay: 260
+- name: 芬兰-01-10.7MB/S·净80
+  type: vless
+  server: 2.27.203.251
+  port: 443
+  udp: true
+  uuid: 1ef7d97f-3aa5-4fe6-8521-84cf4794bf7a
+  tls: true
+  sni: edge-fi2.lovely.my
+  servername: edge-fi2.lovely.my
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  skip-cert-verify: false
+  reality-opts:
+    public-key: QYdQmsVvUj4jwo9gH20nJA5x015gaAL0nGipORe6ZmY
+  network: tcp
+  delay: 282
+- name: 越南-01-0.4MB/S·净100
+  type: vless
+  server: funagfrdfs.alixxplay.com
+  port: 55688
+  udp: true
+  uuid: 57beeeb0-03fc-4fc9-94da-7604488a7134
+  tls: true
+  servername: bilibili-vn.biliimg.com
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: KeV1nArisy7FO5DjqTSmn0hBnlNd38rzhbIMMpe-MBw
+    short-id: a46bb5972cf50671
+  delay: 131
+- name: 阿尔巴尼亚-01-9.4MB/S·净55
+  type: http
+  server: 91.92.250.33
   port: 443
   udp: true
   tls: true
   skip-cert-verify: true
   sub_tag: R002-260618
   delay: 237
-- name: 巴西-01-8.9MB/S
-  type: http
-  server: 134.65.17.77
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 344
-- name: 希腊-01-8.6MB/S
-  type: http
-  server: 149.22.85.78
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 311
-- name: 意大利-01-11.2MB/S
-  type: http
-  server: 185.183.105.130
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 227
-- name: 拉脱维亚-01-9.3MB/S
-  type: http
-  server: 109.248.149.34
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 243
-- name: 挪威-01-10.7MB/S
-  type: http
-  server: 146.70.170.210
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 261
-- name: 捷克-01-11.7MB/S
-  type: http
-  server: 152.233.16.174
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 707
-- name: 新加坡-01-9.0MB/S
-  type: http
-  server: 152.233.9.239
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 366
-- name: 日本-01-1.8MB/S
-  type: socks5
-  server: 101.36.104.46
-  port: 10808
-  udp: true
-  skip-cert-verify: true
-  sub_tag: K001-260618
-  delay: 122
-- name: 格鲁吉亚-01-8.1MB/S
-  type: http
-  server: 195.54.178.210
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 301
-- name: 比利时-01-12.1MB/S
-  type: http
-  server: 146.70.176.242
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 233
-- name: 法国-01-11.4MB/S
-  type: http
-  server: 138.199.47.247
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 191
-- name: 波兰-01-10.8MB/S
-  type: http
-  server: 37.120.156.34
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 236
-- name: 波黑-01-10.1MB/S
-  type: http
-  server: 185.164.35.16
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 266
-- name: 泰国-01-2.8MB/S
-  type: socks5
-  server: 47.87.97.94
-  port: 1080
-  udp: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 728
-- name: 爱沙尼亚-01-10.6MB/S
-  type: http
-  server: 95.153.31.66
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 244
-- name: 瑞典-01-10.6MB/S
-  type: http
-  server: 146.70.242.146
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 770
-- name: 瑞士-01-11.0MB/S
-  type: http
-  server: 149.88.27.33
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: K001-260618
-  delay: 211
-- name: 罗马尼亚-01-10.1MB/S
-  type: http
-  server: 135.136.1.2
-  port: 9443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 250
-- name: 芬兰-01-3.3MB/S
-  type: vless
-  server: hw3.divarkhaghazi.com.
-  port: 465
-  udp: true
-  uuid: 924e20da-fcad-4e7e-8113-c62d27a0d01e
-  tls: true
-  servername: hw3.divarkhaghazi.com.
-  client-fingerprint: chrome
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: hw3.divarkhaghazi.com.
-  delay: 228
-- name: 葡萄牙-01-7.9MB/S
-  type: http
-  server: 149.22.86.1
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 243
-- name: 西班牙-01-11.4MB/S
-  type: http
-  server: 130.195.250.18
-  port: 443
-  udp: true
-  tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 269
-- name: 越南-01-0.4MB/S
-  type: socks5
-  server: 113.22.224.63
-  port: 1083
-  udp: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 295
-- name: 阿尔巴尼亚-01-9.4MB/S
-  type: http
-  server: 87.120.103.226
-  port: 443
-  udp: true
-  password: None
-  tls: true
-  skip-cert-verify: true
-  sub_tag: P002-260618
-  delay: 262
-- name: 韩国-01-0.8MB/S
+- name: 韩国-01-0.5MB/S·净75
   type: socks5
   server: 121.169.46.116
   port: 1090
+  tls: false
+  username: T2clM0QlM0Q6
+  delay: 86
+- name: 马来西亚-01-2.4MB/S·净100
+  type: vless
+  server: vpn.cintaku.qzz.io
+  port: 443
   udp: true
-  password: VDJjbE0wUWxNMFE2Og
-  sub_tag: R002-260618
-  username: VDJjbE0wUWxNMFE2Og
-  delay: 281
-- name: 马来西亚-01-9.0MB/S
-  type: http
-  server: 152.233.3.14
-  port: 9443
-  udp: true
+  uuid: fc7d2cfe-f5ef-40c8-a848-a0bdc11f6349
   tls: true
-  skip-cert-verify: true
-  sub_tag: R002-260618
-  delay: 362
+  servername: vpn.cintaku.qzz.io
+  client-fingerprint: unsafe
+  network: ws
+  ws-opts:
+    path: /vlessws
+    headers:
+      Host: vpn.cintaku.qzz.io
+  packet-encoding: xudp
+  delay: 368
 proxy-groups:
 - name: 节点选择
   type: select
   proxies:
   - 自动选择
-  - 美国-01-132.0MB/S
-  - 美国-02-121.3MB/S
-  - 美国-03-112.5MB/S
-  - 美国-04-103.0MB/S
-  - 美国-05-95.5MB/S
-  - 美国-06-95.3MB/S
-  - 美国-07-95.0MB/S
-  - 美国-08-90.7MB/S
-  - 美国-09-90.0MB/S
-  - 美国-10-89.2MB/S
-  - 美国-11-88.9MB/S
-  - 美国-12-88.6MB/S
-  - 美国-13-87.7MB/S
-  - 美国-14-86.7MB/S
-  - 美国-15-85.6MB/S
-  - 美国-16-84.8MB/S
-  - 英国-01-13.0MB/S
-  - 英国-02-13.0MB/S
-  - 英国-03-13.0MB/S
-  - 英国-04-13.0MB/S
-  - 英国-05-12.9MB/S
-  - 英国-06-12.9MB/S
-  - 英国-07-12.6MB/S
-  - 英国-08-12.5MB/S
-  - 英国-09-12.1MB/S
-  - 德国-01-18.1MB/S
-  - 德国-02-11.8MB/S
-  - 德国-03-11.8MB/S
-  - 德国-04-11.7MB/S
-  - 德国-05-11.7MB/S
-  - 德国-06-11.6MB/S
-  - 荷兰-01-12.4MB/S
-  - 荷兰-02-11.6MB/S
-  - 荷兰-03-11.6MB/S
-  - 加拿大-01-26.2MB/S
-  - 加拿大-02-19.8MB/S
-  - 爱尔兰-01-12.9MB/S
-  - 爱尔兰-02-12.3MB/S
-  - 中国-01-1.2MB/S
-  - 中国台湾-01-0.1MB/S
-  - 中国香港-01-8.6MB/S
-  - 丹麦-01-12.1MB/S
-  - 以色列-01-9.3MB/S
-  - 俄罗斯-01-10.0MB/S
-  - 保加利亚-01-10.0MB/S
-  - 克罗地亚-01-10.9MB/S
-  - 冰岛-01-11.7MB/S
-  - 匈牙利-01-10.1MB/S
-  - 卢森堡-01-11.3MB/S
-  - 印度-01-1.8MB/S
-  - 印度尼西亚-01-7.9MB/S
-  - 厄瓜多尔-01-13.7MB/S
-  - 塞尔维亚-01-10.6MB/S
-  - 墨西哥-01-0.1MB/S
-  - 奥地利-01-11.0MB/S
-  - 巴西-01-8.9MB/S
-  - 希腊-01-8.6MB/S
-  - 意大利-01-11.2MB/S
-  - 拉脱维亚-01-9.3MB/S
-  - 挪威-01-10.7MB/S
-  - 捷克-01-11.7MB/S
-  - 新加坡-01-9.0MB/S
-  - 日本-01-1.8MB/S
-  - 格鲁吉亚-01-8.1MB/S
-  - 比利时-01-12.1MB/S
-  - 法国-01-11.4MB/S
-  - 波兰-01-10.8MB/S
-  - 波黑-01-10.1MB/S
-  - 泰国-01-2.8MB/S
-  - 爱沙尼亚-01-10.6MB/S
-  - 瑞典-01-10.6MB/S
-  - 瑞士-01-11.0MB/S
-  - 罗马尼亚-01-10.1MB/S
-  - 芬兰-01-3.3MB/S
-  - 葡萄牙-01-7.9MB/S
-  - 西班牙-01-11.4MB/S
-  - 越南-01-0.4MB/S
-  - 阿尔巴尼亚-01-9.4MB/S
-  - 韩国-01-0.8MB/S
-  - 马来西亚-01-9.0MB/S
+  - 美国-01-60.4MB/S·净55
+  - 美国-02-57.5MB/S·净75
+  - 美国-03-57.4MB/S·净22
+  - 美国-04-56.6MB/S·净11
+  - 美国-05-56.2MB/S·净54
+  - 美国-06-55.2MB/S·净37
+  - 美国-07-54.7MB/S·净55
+  - 美国-08-53.6MB/S·净55
+  - 美国-09-50.2MB/S·净21
+  - 美国-10-46.1MB/S·净12
+  - 美国-11-36.6MB/S·净15
+  - 美国-12-32.0MB/S·净12
+  - 美国-13-31.7MB/S·净26
+  - 美国-14-30.5MB/S·净11
+  - 美国-15-29.7MB/S·净24
+  - 美国-16-29.1MB/S·净48
+  - 荷兰-01-12.4MB/S·净55
+  - 荷兰-02-12.2MB/S·净55
+  - 荷兰-03-12.2MB/S·净55
+  - 荷兰-04-12.0MB/S·净39
+  - 荷兰-05-12.0MB/S·净48
+  - 荷兰-06-12.0MB/S·净55
+  - 荷兰-07-11.9MB/S·净80
+  - 荷兰-08-11.9MB/S·净55
+  - 荷兰-09-11.8MB/S·净55
+  - 荷兰-10-11.3MB/S·净50
+  - 荷兰-11-10.6MB/S·净55
+  - 俄罗斯-01-11.7MB/S·净75
+  - 俄罗斯-02-11.6MB/S·净80
+  - 俄罗斯-03-11.0MB/S·净80
+  - 俄罗斯-04-10.9MB/S·净75
+  - 俄罗斯-05-10.5MB/S·净80
+  - 俄罗斯-06-10.3MB/S·净75
+  - 德国-01-11.3MB/S·净76
+  - 德国-02-11.2MB/S·净55
+  - 德国-03-10.7MB/S·净50
+  - 德国-04-10.5MB/S·净55
+  - 德国-05-10.0MB/S·净55
+  - 德国-06-9.4MB/S·净55
+  - 中国台湾-01-8.0MB/S·净100
+  - 中国台湾-02-0.4MB/S·净100
+  - 中国香港-01-7.9MB/S·净55
+  - 中国香港-02-3.1MB/S·净100
+  - 加拿大-01-39.5MB/S·净57
+  - 加拿大-02-39.2MB/S·净55
+  - 印度尼西亚-01-7.2MB/S·净75
+  - 印度尼西亚-02-4.2MB/S·净100
+  - 意大利-01-4.3MB/S·净80
+  - 意大利-02-4.2MB/S·净80
+  - 新加坡-01-7.8MB/S·净80
+  - 新加坡-02-7.7MB/S·净80
+  - 日本-01-3.1MB/S
+  - 日本-02-0.7MB/S·净80
+  - 法国-01-10.6MB/S·净55
+  - 法国-02-9.8MB/S·净75
+  - 波兰-01-12.1MB/S·净75
+  - 波兰-02-10.3MB/S·净55
+  - 泰国-01-5.0MB/S·净70
+  - 泰国-02-2.7MB/S·净55
+  - 瑞典-01-4.0MB/S·净47
+  - 瑞典-02-3.1MB/S·净75
+  - 罗马尼亚-01-8.9MB/S·净52
+  - 罗马尼亚-02-8.5MB/S·净55
+  - 英国-01-10.9MB/S·净18
+  - 英国-02-5.0MB/S·净18
+  - 西班牙-01-12.5MB/S·净55
+  - 西班牙-02-3.1MB/S·净75
+  - 印度-01-6.5MB/S·净62
+  - 喀麦隆-01-0.1MB/S·净95
+  - 墨西哥-01-6.3MB/S·净0
+  - 拉脱维亚-01-9.2MB/S·净75
+  - 捷克-01-3.0MB/S·净75
+  - 澳大利亚-01-0.2MB/S·净55
+  - 爱尔兰-01-13.0MB/S·净80
+  - 立陶宛-01-9.4MB/S·净75
+  - 芬兰-01-10.7MB/S·净80
+  - 越南-01-0.4MB/S·净100
+  - 阿尔巴尼亚-01-9.4MB/S·净55
+  - 韩国-01-0.5MB/S·净75
+  - 马来西亚-01-2.4MB/S·净100
   - DIRECT
 - name: 自动选择
   type: url-test
@@ -889,85 +984,85 @@ proxy-groups:
   interval: 300
   tolerance: 50
   proxies:
-  - 美国-01-132.0MB/S
-  - 美国-02-121.3MB/S
-  - 美国-03-112.5MB/S
-  - 美国-04-103.0MB/S
-  - 美国-05-95.5MB/S
-  - 美国-06-95.3MB/S
-  - 美国-07-95.0MB/S
-  - 美国-08-90.7MB/S
-  - 美国-09-90.0MB/S
-  - 美国-10-89.2MB/S
-  - 美国-11-88.9MB/S
-  - 美国-12-88.6MB/S
-  - 美国-13-87.7MB/S
-  - 美国-14-86.7MB/S
-  - 美国-15-85.6MB/S
-  - 美国-16-84.8MB/S
-  - 英国-01-13.0MB/S
-  - 英国-02-13.0MB/S
-  - 英国-03-13.0MB/S
-  - 英国-04-13.0MB/S
-  - 英国-05-12.9MB/S
-  - 英国-06-12.9MB/S
-  - 英国-07-12.6MB/S
-  - 英国-08-12.5MB/S
-  - 英国-09-12.1MB/S
-  - 德国-01-18.1MB/S
-  - 德国-02-11.8MB/S
-  - 德国-03-11.8MB/S
-  - 德国-04-11.7MB/S
-  - 德国-05-11.7MB/S
-  - 德国-06-11.6MB/S
-  - 荷兰-01-12.4MB/S
-  - 荷兰-02-11.6MB/S
-  - 荷兰-03-11.6MB/S
-  - 加拿大-01-26.2MB/S
-  - 加拿大-02-19.8MB/S
-  - 爱尔兰-01-12.9MB/S
-  - 爱尔兰-02-12.3MB/S
-  - 中国-01-1.2MB/S
-  - 中国台湾-01-0.1MB/S
-  - 中国香港-01-8.6MB/S
-  - 丹麦-01-12.1MB/S
-  - 以色列-01-9.3MB/S
-  - 俄罗斯-01-10.0MB/S
-  - 保加利亚-01-10.0MB/S
-  - 克罗地亚-01-10.9MB/S
-  - 冰岛-01-11.7MB/S
-  - 匈牙利-01-10.1MB/S
-  - 卢森堡-01-11.3MB/S
-  - 印度-01-1.8MB/S
-  - 印度尼西亚-01-7.9MB/S
-  - 厄瓜多尔-01-13.7MB/S
-  - 塞尔维亚-01-10.6MB/S
-  - 墨西哥-01-0.1MB/S
-  - 奥地利-01-11.0MB/S
-  - 巴西-01-8.9MB/S
-  - 希腊-01-8.6MB/S
-  - 意大利-01-11.2MB/S
-  - 拉脱维亚-01-9.3MB/S
-  - 挪威-01-10.7MB/S
-  - 捷克-01-11.7MB/S
-  - 新加坡-01-9.0MB/S
-  - 日本-01-1.8MB/S
-  - 格鲁吉亚-01-8.1MB/S
-  - 比利时-01-12.1MB/S
-  - 法国-01-11.4MB/S
-  - 波兰-01-10.8MB/S
-  - 波黑-01-10.1MB/S
-  - 泰国-01-2.8MB/S
-  - 爱沙尼亚-01-10.6MB/S
-  - 瑞典-01-10.6MB/S
-  - 瑞士-01-11.0MB/S
-  - 罗马尼亚-01-10.1MB/S
-  - 芬兰-01-3.3MB/S
-  - 葡萄牙-01-7.9MB/S
-  - 西班牙-01-11.4MB/S
-  - 越南-01-0.4MB/S
-  - 阿尔巴尼亚-01-9.4MB/S
-  - 韩国-01-0.8MB/S
-  - 马来西亚-01-9.0MB/S
+  - 美国-01-60.4MB/S·净55
+  - 美国-02-57.5MB/S·净75
+  - 美国-03-57.4MB/S·净22
+  - 美国-04-56.6MB/S·净11
+  - 美国-05-56.2MB/S·净54
+  - 美国-06-55.2MB/S·净37
+  - 美国-07-54.7MB/S·净55
+  - 美国-08-53.6MB/S·净55
+  - 美国-09-50.2MB/S·净21
+  - 美国-10-46.1MB/S·净12
+  - 美国-11-36.6MB/S·净15
+  - 美国-12-32.0MB/S·净12
+  - 美国-13-31.7MB/S·净26
+  - 美国-14-30.5MB/S·净11
+  - 美国-15-29.7MB/S·净24
+  - 美国-16-29.1MB/S·净48
+  - 荷兰-01-12.4MB/S·净55
+  - 荷兰-02-12.2MB/S·净55
+  - 荷兰-03-12.2MB/S·净55
+  - 荷兰-04-12.0MB/S·净39
+  - 荷兰-05-12.0MB/S·净48
+  - 荷兰-06-12.0MB/S·净55
+  - 荷兰-07-11.9MB/S·净80
+  - 荷兰-08-11.9MB/S·净55
+  - 荷兰-09-11.8MB/S·净55
+  - 荷兰-10-11.3MB/S·净50
+  - 荷兰-11-10.6MB/S·净55
+  - 俄罗斯-01-11.7MB/S·净75
+  - 俄罗斯-02-11.6MB/S·净80
+  - 俄罗斯-03-11.0MB/S·净80
+  - 俄罗斯-04-10.9MB/S·净75
+  - 俄罗斯-05-10.5MB/S·净80
+  - 俄罗斯-06-10.3MB/S·净75
+  - 德国-01-11.3MB/S·净76
+  - 德国-02-11.2MB/S·净55
+  - 德国-03-10.7MB/S·净50
+  - 德国-04-10.5MB/S·净55
+  - 德国-05-10.0MB/S·净55
+  - 德国-06-9.4MB/S·净55
+  - 中国台湾-01-8.0MB/S·净100
+  - 中国台湾-02-0.4MB/S·净100
+  - 中国香港-01-7.9MB/S·净55
+  - 中国香港-02-3.1MB/S·净100
+  - 加拿大-01-39.5MB/S·净57
+  - 加拿大-02-39.2MB/S·净55
+  - 印度尼西亚-01-7.2MB/S·净75
+  - 印度尼西亚-02-4.2MB/S·净100
+  - 意大利-01-4.3MB/S·净80
+  - 意大利-02-4.2MB/S·净80
+  - 新加坡-01-7.8MB/S·净80
+  - 新加坡-02-7.7MB/S·净80
+  - 日本-01-3.1MB/S
+  - 日本-02-0.7MB/S·净80
+  - 法国-01-10.6MB/S·净55
+  - 法国-02-9.8MB/S·净75
+  - 波兰-01-12.1MB/S·净75
+  - 波兰-02-10.3MB/S·净55
+  - 泰国-01-5.0MB/S·净70
+  - 泰国-02-2.7MB/S·净55
+  - 瑞典-01-4.0MB/S·净47
+  - 瑞典-02-3.1MB/S·净75
+  - 罗马尼亚-01-8.9MB/S·净52
+  - 罗马尼亚-02-8.5MB/S·净55
+  - 英国-01-10.9MB/S·净18
+  - 英国-02-5.0MB/S·净18
+  - 西班牙-01-12.5MB/S·净55
+  - 西班牙-02-3.1MB/S·净75
+  - 印度-01-6.5MB/S·净62
+  - 喀麦隆-01-0.1MB/S·净95
+  - 墨西哥-01-6.3MB/S·净0
+  - 拉脱维亚-01-9.2MB/S·净75
+  - 捷克-01-3.0MB/S·净75
+  - 澳大利亚-01-0.2MB/S·净55
+  - 爱尔兰-01-13.0MB/S·净80
+  - 立陶宛-01-9.4MB/S·净75
+  - 芬兰-01-10.7MB/S·净80
+  - 越南-01-0.4MB/S·净100
+  - 阿尔巴尼亚-01-9.4MB/S·净55
+  - 韩国-01-0.5MB/S·净75
+  - 马来西亚-01-2.4MB/S·净100
 rules:
 - MATCH,节点选择
