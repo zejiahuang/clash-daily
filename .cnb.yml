@@ -10,7 +10,8 @@
 # 一轮的走向：
 #   采集 → 延迟测速（CNB）→ dist/candidates.json
 #        → 提交到本仓库（公开可读）
-#        → GitHub 的 speedtest 工作流按 cron 来取，经节点测速，
+#        → GitHub 的 speedtest 工作流**常驻看守**（一个 job 活 5.5 小时、每 30 秒
+#          看一眼 candidates.json），看到新的 run_id 就经节点测速，
 #          把 dist/speed.json 提交回它自己的仓库
 #        → CNB 轮询 GitHub 的公开 raw 取回（run_id 对得上才算）
 #        → 国家判定 / 去重 / 重命名（CNB）→ 提交回 CNB
@@ -20,7 +21,9 @@
 #    但这个仓库是**公开**的：写进 .cnb.yml 等于把写权限发给所有人，而且 GitHub
 #    的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销**，过几小时就坏。
 #    所以方向反过来：GitHub 自己来取（读公开 raw），写也只写它自己的仓库。
-#    代价是触发变成 cron 轮询，延迟最多 10 分钟。
+#    代价是触发只能靠 GitHub 自己 —— 所以那边必须是常驻看守，不能是「cron 起来
+#    看一眼就退出」：公开仓库的 schedule 实测每 117~148 分钟才触发一次（2026-10-25，
+#    6 次运行全量对照），「每 10 分钟看一眼」这个形状等于根本不看。
 #
 # 三个入口：
 #   1. web_trigger_daily —— 分支详情页的「立即跑一轮」按钮，参数可填
@@ -116,8 +119,9 @@ main:
         - name: 等 GitHub 测速
           script: |
             # 全程零密钥：这里只轮询 GitHub 的公开 raw，等 run_id 对上的 speed.json。
-            # GitHub 侧按 cron（每 10 分钟）读上面发布的 candidates.json，
-            # 发现新的 run_id 就开始测速，测完提交回它自己的仓库。
+            # GitHub 侧是**常驻看守**（每 30 秒看一眼上面发布的 candidates.json），
+            # 正常情况下 30 秒内就开始测；等不到时脚本会去读 GitHub Actions 的公开
+            # 状态，说清是「没人叫它」还是「叫了但跳过了」，而不是干等 40 分钟。
             set -e
             bash scripts/wait_speed.sh dist/candidates.json
 

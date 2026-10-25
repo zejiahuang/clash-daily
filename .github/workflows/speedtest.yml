@@ -4,26 +4,38 @@
 # GitHub runner 的出口宽得多，读数才不会被测速机本身压住。
 # 代价是速度变成「GitHub runner → 节点」，所以 CNB 侧会把两个位置都写进产物头部。
 #
-# 为什么是 cron 轮询而不是「CNB 推过来触发」：CNB 仓库是**公开**的，往公开仓库里
+# 为什么是「自己来取」而不是「CNB 推过来触发」：CNB 仓库是**公开**的，往公开仓库里
 # 写一个 GitHub PAT，等于把写权限发给所有人；而且 GitHub 的密钥扫描会把公开仓库
-# 里出现的 `ghp_` 令牌**自动吊销** —— 那种做法不是「不安全但能用」，是过几小时就坏。
+# 里出现的 `ghp_` 令牌**自动吊销** —— 那种做法不是「不安全但能用」，是「过几小时就坏」。
 # 所以方向反过来：**GitHub 自己来取**，全程零密钥。
+#
+# ⚠️ **`schedule` 不是定时器 —— 这条是 2026-10-25 用现场数据推翻的。**
+#    这个仓库是公开的，cron 写的是 `*/10`，但实测 6 次运行的间隔是
+#    **117 / 126 / 148 / 136 分钟**（平均两小时多一次，GitHub 文档也写着 schedule
+#    是「尽力而为」，高负载时会被丢弃或延后）。后果不是「慢一点」，是**根本不发生**：
+#    那天 CNB 发布候选后老老实实等了 40 分钟，GitHub 一次都没被叫醒，而 CNB 的日志
+#    只有 119 行「speed.json 还是上一轮的」—— 看不出是「没人叫它」还是「叫了但跳过了」。
+#
+#    所以形状必须换掉：「每 10 分钟起来看一眼就退出」改成**常驻看守** ——
+#    一个 job 活 5.5 小时，每 30 秒看一眼 CNB，看到新的 run_id 就测速、交付，
+#    然后回到轮询接着守。触发延迟从「最长 2.5 小时」变成「最长 30 秒」，
+#    cron 只剩一个作用：**保证看守一直有人活着**（看守活 5.5 小时，实测 cron 间隔
+#    2~2.5 小时，覆盖得上；公开仓库的 Actions 不计费）。
 #
 # 一轮的时序：
 #   CNB 跑完延迟测速 → 把 dist/candidates.json 提交上去（公开可读）
-#   → 本工作流（最多 10 分钟后）读到新的 run_id → 经节点测速
-#   → 把 dist/speed.json 提交回本仓库
-#   → 等 CNB 收尾（轮询 CNB 的 dist/report.json，run_id 对上）
-#   → 把最终产物复制一份到本仓库
+#   → 本工作流（≤30 秒后）读到新的 run_id → 经节点测速 → 提交 dist/speed.json
+#   → 等 CNB 收尾（轮询 CNB 的 dist/report.json，run_id 对上）→ 把产物复制一份回来
+#   → 回到轮询，接着看守（同一个 job 里可以服务好几轮）
 #
-# ⚠️ 判断「有没有新的一轮」只能比 run_id，不能看时间戳：cron 每 10 分钟跑一次，
+# ⚠️ 判断「有没有新的一轮」只能比 run_id，不能看时间戳：看守每 30 秒看一次，
 #    绝大多数时候什么都没变，没有这道门每次都要白测一遍。
 name: speedtest
 
 on:
   schedule:
-    # 每 10 分钟看一眼 CNB 有没有新候选。一天 144 次空跑，每次约 15 秒
-    # （空跑只做一次 curl，不装依赖、不测速）。公开仓库不计费。
+    # 唯一作用是「保证看守一直有人活着」，不是「每 10 分钟测一次」——
+    # 它实际每 2~2.5 小时才触发一次，所以看守必须活得比它久（见 WATCH_MINUTES）。
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
@@ -35,125 +47,169 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  CNB_RAW: https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main
+  CNB_REPO: https://cnb.cool/StriveGlory/clash-daily.git
+  # 看守窗口（分钟）。必须**显著大于实测的 cron 间隔**（117~148 分钟），
+  # 否则会出现「看守走了、下一个还没来」的空档，那段时间 CNB 又在白等。
+  WATCH_MINUTES: "330"
+  POLL_SECONDS: "30"
+
 jobs:
   speed:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # GitHub-hosted runner 单 job 上限 360 分钟；留 20 分钟给「窗口末尾刚开始的那一轮」。
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
-      - name: 看 CNB 上有没有新的一轮
-        id: gate
-        run: |
-          set -e
-          # ⚠️ 404 必须当成「今天还没有新的一轮」而不是失败：cron 每 10 分钟一次，
-          #    一天 144 次；还没跑过一整轮时 candidates.json 根本不存在，若让
-          #    `curl -f` 直接失败，就是一天 144 次红灯 —— 之后真出问题也看不见。
-          #    但**网络失败不能当成 404**，否则 cnb.cool 从 GitHub 不可达时会永远
-          #    安静地「跳过」，看着一直是绿的。
-          code=$(curl -sS --max-time 30 -o /tmp/candidates.json -w '%{http_code}' \
-            "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/candidates.json?t=$(date +%s)" \
-            || echo 000)
-          if [ "$code" = "404" ]; then
-            echo "CNB 上还没有 dist/candidates.json（还没跑过一整轮）⇒ 跳过"
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "$code" != "200" ]; then
-            echo "取候选失败：HTTP $code —— 不是「没有新的一轮」，是取不到"
-            exit 1
-          fi
-          python - <<'EOF'
-          import json, os, pathlib
-          cand = json.load(open("/tmp/candidates.json", encoding="utf-8"))
-          run_id = str(cand.get("run_id") or "")
-          done = ""
-          p = pathlib.Path("dist/speed.json")
-          if p.is_file():
-              done = str(json.loads(p.read_text(encoding="utf-8")).get("run_id") or "")
-          skip = "1" if (run_id and run_id == done) else "0"
-          print(f"候选 run_id={run_id or '(空)'}，已测过={done or '(无)'} ⇒ "
-                f"{'跳过' if skip == '1' else '开始测速'}")
-          print(f"候选 {len(cand.get('candidates') or [])} 个")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"run_id={run_id}\nskip={skip}\n")
-          EOF
-
       - uses: actions/setup-python@v5
-        if: steps.gate.outputs.skip != '1'
         with:
           python-version: "3.11"
 
-      - name: 取 CNB 上的代码
-        if: steps.gate.outputs.skip != '1'
+      - name: 看守：等候选 → 测速 → 交付
         run: |
-          set -e
-          # 代码从 CNB 取，不从本仓库取 —— 本仓库的 main 只是产物副本，
-          # 代码可能落后好几轮。跑旧代码测出来的结果看着一样正常，最难发现。
-          git clone --depth 1 https://cnb.cool/StriveGlory/clash-daily.git /tmp/cnb
-          git -C /tmp/cnb log -1 --format='CNB HEAD: %h %s'
-          pip install -r /tmp/cnb/requirements.txt
+          # 故意不用 `set -e`：单轮失败（网络抖动、clone 失败）不该让看守退出，
+          # 一退出就回到「没人守着」的老毛病。每一步都显式判返回值。
+          set -uo pipefail
 
-      - name: 下载测速（经节点，用 Cloudflare）
-        if: steps.gate.outputs.skip != '1'
-        run: |
-          set -e
-          cd /tmp/cnb
-          # 并发 / 下载量 / 复测个数**不在这里传**：它们跟着 dist/candidates.json
-          # 的 knobs 字段过来（源头是 CNB 按钮上的参数）。在这里再写一份就会
-          # 出现「按钮改了但没生效」——两边各说各话。
-          python main.py --stage speed \
-            --in dist/candidates.json \
-            --speed-out /tmp/speed.json \
-            --work /tmp/work
+          log() { echo "[$(TZ=Asia/Shanghai date +'%m-%d %H:%M:%S')] $*"; }
+          # 「还在等」这种话最多 5 分钟说一次，否则 5.5 小时能刷出 600 行一样的
+          last_note=0
+          note() {
+            local now; now=$(date +%s)
+            if [ $((now - last_note)) -ge 300 ]; then last_note=$now; log "$@"; fi
+          }
 
-      - name: 提交测速结果
-        if: steps.gate.outputs.skip != '1'
-        run: |
-          set -e
-          cp /tmp/speed.json dist/speed.json
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/speed.json
-          git commit -m "chore(speed): $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 run_id=${{ steps.gate.outputs.run_id }}"
-          git push
 
-      - name: 等 CNB 收尾，再复制一份产物
-        if: steps.gate.outputs.skip != '1'
-        run: |
-          set -e
-          RUN_ID="${{ steps.gate.outputs.run_id }}"
-          echo "等 CNB 把这一轮收尾（run_id=$RUN_ID）"
-          ok=0
-          for i in $(seq 1 60); do
-            curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
-              "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/report.json?t=$(date +%s)$i" \
-              -o /tmp/report.json 2>/dev/null || true
-            GOT=$(python - /tmp/report.json <<'EOF'
-          import json, sys
-          try:
-              print(json.load(open(sys.argv[1], encoding="utf-8")).get("run_id") or "")
-          except Exception:
-              print("")
-          EOF
-            )
-            if [ "$GOT" = "$RUN_ID" ]; then ok=1; break; fi
-            sleep 15
-          done
-          if [ "$ok" != "1" ]; then
-            echo "⚠️ 15 分钟内没等到 CNB 收尾 —— 这一轮不复制产物（下一轮会带上）"
-            exit 0
+          deadline=$(( $(date +%s) + WATCH_MINUTES * 60 ))
+          done_id=""
+          if [ -f dist/speed.json ]; then
+            done_id=$(python -c 'import json;print(json.load(open("dist/speed.json",encoding="utf-8")).get("run_id") or "")' 2>/dev/null || true)
           fi
-          # CNB 只能读公开 raw，这里逐个取回来再提交到本仓库
-          for f in clash.yaml clash.base64.txt report.json report.md candidates.json; do
-            curl -fsS --max-time 30 \
-              "https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/$f?t=$(date +%s)" \
-              -o "dist/$f"
+          log "看守开始：最多 ${WATCH_MINUTES} 分钟、每 ${POLL_SECONDS} 秒看一次 CNB；已测过=${done_id:-（无）}"
+
+          fails=0
+          rounds=0
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            # ---- 1. 取候选 ----
+            # ⚠️ 404 必须当成「今天还没有新的一轮」而不是失败：还没跑过一整轮时
+            #    candidates.json 根本不存在，若让 `curl -f` 直接失败，就是一天上百次
+            #    红灯 —— 之后真出问题也看不见。但**网络失败不能当成 404**，否则
+            #    cnb.cool 从 GitHub 不可达时会永远安静地「跳过」，看着一直是绿的。
+            code=$(curl -sS --max-time 30 -o /tmp/candidates.json -w '%{http_code}' \
+              "$CNB_RAW/dist/candidates.json?t=$(date +%s)" || echo 000)
+            if [ "$code" = "404" ]; then
+              note "CNB 上还没有 candidates.json（还没跑过一整轮）⇒ 继续等"
+              fails=0
+              sleep "$POLL_SECONDS"; continue
+            fi
+            if [ "$code" != "200" ]; then
+              fails=$((fails + 1))
+              log "取候选失败：HTTP $code（连续 $fails 次）—— 不是「没有新的一轮」，是取不到"
+              if [ "$fails" -ge 10 ]; then
+                log "连续 10 次取不到候选 —— 退出，交给下一次 cron"
+                exit 1
+              fi
+              sleep "$POLL_SECONDS"; continue
+            fi
+            fails=0
+
+            run_id=$(python -c 'import json;print(json.load(open("/tmp/candidates.json",encoding="utf-8")).get("run_id") or "")' 2>/dev/null || true)
+            if [ -z "$run_id" ]; then
+              note "candidates.json 里没有 run_id —— 跳过这一次"
+              sleep "$POLL_SECONDS"; continue
+            fi
+            if [ "$run_id" = "$done_id" ]; then
+              note "候选 run_id=$run_id 已经测过 ⇒ 继续等下一轮"
+              sleep "$POLL_SECONDS"; continue
+            fi
+
+            # ---- 2. 取代码 + 测速 ----
+            rounds=$((rounds + 1))
+            total=$(python -c 'import json;print(len(json.load(open("/tmp/candidates.json",encoding="utf-8")).get("candidates") or []))' 2>/dev/null || echo "?")
+            log "第 $rounds 轮：run_id=$run_id（候选 $total 个）⇒ 开始测速"
+
+            # 代码从 CNB 取，不从本仓库取 —— 本仓库的 main 只是产物副本，
+            # 代码可能落后好几轮。跑旧代码测出来的结果看着一样正常，最难发现。
+            rm -rf /tmp/cnb /tmp/work
+            if ! git clone -q --depth 1 "$CNB_REPO" /tmp/cnb; then
+              log "⚠️ 取不到 CNB 上的代码 —— 这一轮跳过"
+              sleep "$POLL_SECONDS"; continue
+            fi
+            log "代码：$(git -C /tmp/cnb log -1 --format='%h %s')"
+            if ! pip install -q -r /tmp/cnb/requirements.txt; then
+              log "⚠️ 依赖安装失败 —— 这一轮跳过"
+              sleep "$POLL_SECONDS"; continue
+            fi
+
+            # 并发 / 下载量 / 复测个数**不在这里传**：它们跟着 candidates.json 的
+            # knobs 字段过来（源头是 CNB 按钮上的参数）。在这里再写一份就会
+            # 出现「按钮改了但没生效」—— 两边各说各话。
+            #
+            # ⚠️ `--in` 必须是**刚才 gate 判过的那份** `/tmp/candidates.json`，
+            #    不是 `/tmp/cnb/dist/candidates.json`。clone 里那份随时可能变成
+            #    下一轮：于是 speed.json 里的 run_id 是 Y，而 CNB 在等 X，
+            #    两边都"成功"、CNB 一直等到超时，日志里看不出任何异常。
+            if ! ( cd /tmp/cnb && python main.py --stage speed \
+                     --in /tmp/candidates.json \
+                     --speed-out /tmp/speed.json \
+                     --work /tmp/work ); then
+              log "⚠️ 测速失败 —— 这一轮跳过"
+              sleep "$POLL_SECONDS"; continue
+            fi
+
+            got=$(python -c 'import json;print(json.load(open("/tmp/speed.json",encoding="utf-8")).get("run_id") or "")' 2>/dev/null || true)
+            if [ "$got" != "$run_id" ]; then
+              log "⚠️ 测速结果的 run_id=$got ≠ 候选的 $run_id —— 不提交（提交了 CNB 也认不出）"
+              sleep "$POLL_SECONDS"; continue
+            fi
+
+            # ---- 3. 交回 speed.json ----
+            git fetch -q origin main && git reset -q --hard FETCH_HEAD
+            cp /tmp/speed.json dist/speed.json
+            git add dist/speed.json
+            git commit -q -m "chore(speed): $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间 run_id=$run_id"
+            if ! git push -q origin HEAD:main; then
+              log "⚠️ 推送 speed.json 失败 —— 这一轮跳过"
+              sleep "$POLL_SECONDS"; continue
+            fi
+            done_id="$run_id"
+            log "已提交 speed.json（run_id=$run_id）—— CNB 那边 30 秒内会取到"
+
+            # ---- 4. 等 CNB 收尾，再把产物复制一份回来 ----
+            ok=0
+            for i in $(seq 1 60); do
+              curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+                "$CNB_RAW/dist/report.json?t=$(date +%s)$i" -o /tmp/report.json 2>/dev/null || true
+              got_r=$(python -c 'import json;print(json.load(open("/tmp/report.json",encoding="utf-8")).get("run_id") or "")' 2>/dev/null || true)
+              if [ "$got_r" = "$run_id" ]; then ok=1; break; fi
+              sleep 15
+            done
+            if [ "$ok" != "1" ]; then
+              log "⚠️ 15 分钟内没等到 CNB 收尾 —— 这一轮不复制产物（下一轮会带上）"
+              continue
+            fi
+            bad=0
+            for f in clash.yaml clash.base64.txt report.json report.md candidates.json; do
+              # 先下到 /tmp 再 mv：直接 `-o dist/$f` 失败时会留下半截文件并被提交
+              if curl -fsS --max-time 30 "$CNB_RAW/dist/$f?t=$(date +%s)" -o "/tmp/$f"; then
+                mv "/tmp/$f" "dist/$f"
+              else
+                log "⚠️ 取 $f 失败 —— 这一轮不复制产物"; bad=1; break
+              fi
+            done
+            if [ "$bad" = "1" ]; then continue; fi
+            git add dist
+            if git diff --cached --quiet; then
+              log "产物没有变化，不提交"
+            else
+              git commit -q -m "chore(nodes): 复制 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间的一轮产物"
+              git push -q origin HEAD:main || log "⚠️ 推送产物失败"
+            fi
+            log "第 $rounds 轮交付完成（run_id=$run_id），回到看守"
           done
-          git add dist
-          if git diff --cached --quiet; then
-            echo "产物没有变化，跳过提交"
-            exit 0
-          fi
-          git commit -m "chore(nodes): 复制 $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M') 北京时间的一轮产物"
-          git push
+
+          log "看守窗口结束（${WATCH_MINUTES} 分钟，共服务 $rounds 轮）—— 下一次 cron 会接上"
