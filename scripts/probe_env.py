@@ -82,8 +82,14 @@ def _text(url: str, *, timeout: float = 10.0) -> str:
 # ------------------------------------------------------------------- 取被测目标
 
 
-def source_urls(limit: int = 12) -> list[str]:
-    """从 clashhunter/sources.py 的 SOURCES 块里抠出 https 地址。"""
+def source_urls(limit: int = 24) -> list[str]:
+    """从 clashhunter/sources.py 的 SOURCES 块里抠出 https 地址。
+
+    ⚠️ `limit` 必须大于等于源站数 × 平均地址数。它原来是 12，而源站从 10 个
+       涨到 14 个之后，**后加的源直接被截掉**，自检里看不见 —— 而这份自检
+       存在的唯一理由就是「流水线红了但读不到日志时，仓库里还有证据」。
+       带 `{date}` 的模板地址跳过：它是按日期拼出来的，原样去请求必然 404。
+    """
     path = ROOT / "clashhunter" / "sources.py"
     if not path.is_file():
         return []
@@ -92,6 +98,8 @@ def source_urls(limit: int = 12) -> list[str]:
     block = text[start:] if start >= 0 else text
     out: list[str] = []
     for url in re.findall(r'"(https://[^"]+)"', block):
+        if "{" in url:
+            continue
         if url not in out:
             out.append(url)
     return out[:limit]
@@ -330,6 +338,46 @@ def _verdict(single: float, agg: float, ratio: float | None) -> str:
             f"⇒ 初筛不压并发，只按「超时的一半」收")
 
 
+def purity_checks() -> dict:
+    """纯净度那两路接口能不能从这台机器打到。
+
+    为什么值得单独探：这两路都**不影响出产物**（拿不到就退回「未知」），
+    所以它们坏掉时整条流水线照样绿 —— 唯一能发现的地方就是这里。
+    判据：`ip_api` 有 `proxy/hosting/mobile` 字段，`scamalytics` 页面上有
+    `Fraud Score`。少一个字段就等于那一路白跑。
+    """
+    out: dict = {"ip_api": {}, "scamalytics": {}}
+    # 拿一个已知的机房 IP 当对照样本：它必须回 hosting=true。
+    # 没有对照的话，「查不到」和「查到了但字段没返回」在日志里长得一样。
+    try:
+        body = _text(
+            "http://ip-api.com/json/104.16.132.229"
+            "?fields=status,countryCode,proxy,hosting,mobile,isp"
+        )
+        data = json.loads(body)
+        out["ip_api"] = {
+            "ok": data.get("status") == "success",
+            "hosting": data.get("hosting"),
+            "proxy": data.get("proxy"),
+            "mobile": data.get("mobile"),
+            "has_flags": all(k in data for k in ("proxy", "hosting", "mobile")),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["ip_api"] = {"ok": False, "err": f"{type(exc).__name__}: {exc}"}
+    try:
+        row = probe("https://scamalytics.com/ip/104.16.132.229", capture=200000)
+        body = row.pop("body", "") or ""
+        match = re.search(r"Fraud Score:\s*(\d{1,3})", body)
+        out["scamalytics"] = {
+            "ok": bool(match),
+            "fraud": int(match.group(1)) if match else None,
+            **row,
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["scamalytics"] = {"ok": False, "err": f"{type(exc).__name__}: {exc}"}
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="CNB runner 环境自检")
     ap.add_argument("--out", default="dist/probe.json")
@@ -344,6 +392,7 @@ def main() -> int:
         "kernel": kernel_checks(),
         "speed_source": [probe(SPEED_URL, limit=1048576)],
         "bandwidth": bandwidth(),
+        "purity": purity_checks(),
         "sources": [_probe_source(u) for u in source_urls()],
     }
     report["elapsed_s"] = round(time.monotonic() - started, 1)
@@ -385,6 +434,17 @@ def main() -> int:
           + (f"  {many['errs'][0]}" if many["errs"] else ""))
     print(f"  ⇒ {bw['verdict']}")
     show("采集源站", report["sources"])
+    pur = report["purity"]
+    print("\n== 纯净度接口（拿不到只是「未知」，不会让流水线红）")
+    print(f"  ip-api      {'OK' if pur['ip_api'].get('ok') else 'FAIL'}  "
+          f"flags={'齐' if pur['ip_api'].get('has_flags') else '缺'}  "
+          f"hosting={pur['ip_api'].get('hosting')} proxy={pur['ip_api'].get('proxy')}"
+          + (f"  {pur['ip_api'].get('err')}" if pur['ip_api'].get("err") else ""))
+    print(f"  Scamalytics {'OK' if pur['scamalytics'].get('ok') else 'FAIL'}  "
+          f"fraud={pur['scamalytics'].get('fraud')}  "
+          f"{pur['scamalytics'].get('status') or '-'} "
+          f"{pur['scamalytics'].get('ms') or 0}ms"
+          + (f"  {pur['scamalytics'].get('err')}" if pur['scamalytics'].get("err") else ""))
     print(f"\n写入 {out}（{report['elapsed_s']}s）")
     return 0
 

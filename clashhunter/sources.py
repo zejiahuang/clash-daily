@@ -18,6 +18,12 @@
   kind="gh-uploads"    仓库里按日期堆积的 uploads/YYYY/MM/<n>-YYYYMMDD.yaml|txt，取最新日期
                        —— freeclashverge/freeclashverge.github.io
 
+  kind="direct"        订阅地址就是接口本身，没有文件扩展名，页面里也不用解析
+                       —— zmxoo.xyz（tian.zmxoo.xyz/subapi）
+
+  kind="dated-sub"     索引页 -> 纯数字文章 ID（/13783）-> 正文里的 sub/clash-YYYYMMDD.yaml
+                       —— xinshoucun.net
+
 实测记录（2026-10-24）：
   * lancex.net 的文章可抓，但订阅文件全在 node.lancex.net 上，该域整站 526
     （Cloudflare「源站证书无效」，根路径也一样），带不带 Referer、http/https 都 526。
@@ -30,6 +36,19 @@
     解析出的 15 个节点也完全一致 —— 两家其实是同一份数据，去重会消掉，无需特殊处理。
   * freeclashverge 单日 uploads 里 2-YYYYMMDD.yaml 就有 1922 个节点；
     同一天的 .yaml 与 .txt 是同一批节点，所以先取 .yaml，为空才退回 .txt。
+
+新增源实测（2026-10-25，本机 + 境外抓取各一次）：
+  * hello-world-1989/cn-news 的 clash-free.yaml 有 531 KB，但 `proxies:` 里只有
+    **6 个节点**（vless×2 / ss×2 / hysteria2×2），其余是 proxy-groups。文件大不等于节点多。
+  * sunmiao4458/free-proxy-airport 的 output/clash.yaml 是 23 个（vless 17 / vmess 2 /
+    trojan 3 / ss 1），docs/clash.yaml 是同一份（同尺寸 9744 B），只取 output/ 一个。
+  * zmxoo.xyz 的页面里订阅是 `https://tian.zmxoo.xyz/subapi`（Clash）与 `/linkapi`
+    （小火箭 base64）。**路径没有扩展名**，`manifest` 的 `\\.(ya?ml|txt)` 正则看不见它，
+    所以走 `direct`。正文里前三个是 `server: 0.0.0.0` 的公告条目，靠 nodes.py 的
+    `_BAD_HOSTS` 过滤掉；真实节点 130 个。
+  * xinshoucun.net 的文章 ID 是纯数字（`/13783`，没有日期），日期只在正文的
+    `sub/clash-20261024.yaml` 里。索引页的链接顺序是 ID 倒序 ⇒ 取 ID 最大的那篇。
+    单篇 168 个节点（ss 138 / trojan 20 / vmess 10）。
 """
 
 from __future__ import annotations
@@ -87,6 +106,26 @@ SOURCES: tuple[Source, ...] = (
 
     # ---- 10. 按日期堆积的 uploads/ ----
     Source("freeclashverge", "gh-uploads", "freeclashverge/freeclashverge.github.io"),
+
+    # ---- 11~12. GitHub 固定文件名（新增） ----
+    # cn-news 的 clash-free.yaml 有 531 KB，但 proxies 里只有 6 个节点 —— 文件大是
+    # 因为塞了整套 dns / rule-providers。别因为体积大就以为节点多。
+    Source("cn-news", "github-raw",
+           "https://raw.githubusercontent.com/hello-world-1989/cn-news/main/",
+           ("clash-free.yaml",)),
+    # 同一份文件在 docs/ 与 output/ 各有一份（9744 B，内容一致），只取一个：
+    # 两份都取会让同一批节点各出现一次，虽然去重能消掉，但日志里会多一行假象。
+    Source("sunmiao", "github-raw",
+           "https://raw.githubusercontent.com/sunmiao4458/free-proxy-airport/main/",
+           ("output/clash.yaml",)),
+
+    # ---- 13. 订阅接口本身（无扩展名，见模块 docstring） ----
+    Source("zmxoo", "direct", "https://zmxoo.xyz/",
+           ("https://tian.zmxoo.xyz/subapi",)),
+
+    # ---- 14. 纯数字文章 ID -> sub/clash-YYYYMMDD.yaml ----
+    Source("xinshoucun", "dated-sub", "https://xinshoucun.net/category/freenode",
+           ("https://xinshoucun.net/sub/clash-{date}.yaml",)),
 )
 
 _HREF_RE = re.compile(r"""href=["']([^"'#?]+)["']""", re.IGNORECASE)
@@ -102,6 +141,14 @@ _ANY_FILE_RE = re.compile(
 _WP_POST_RE = re.compile(r"free-nodes/(\d{4}-\d{2}-\d{2})/?", re.IGNORECASE)
 _UPLOAD_STAMP_RE = re.compile(r"""uploads/\d{4}/\d{1,2}/(\d+)-(\d{8})\.(ya?ml|txt)$""",
                               re.IGNORECASE)
+
+# xinshoucun 的文章 ID 是纯数字且没有日期：https://xinshoucun.net/13783
+# 必须整条路径就是一个数字才算 —— 否则 `wp-json/wp/v2/categories/76` 这种也会被当成文章。
+_ARTICLE_ID_RE = re.compile(r"^https?://[^/]+/(\d{2,7})/?$")
+# 正文里的订阅文件：https://xinshoucun.net/sub/clash-20261024.yaml
+_DATED_SUB_RE = re.compile(
+    r"""https?://[A-Za-z0-9.\-]+/sub/clash-\d{8}\.(?:ya?ml|txt)""", re.IGNORECASE
+)
 
 
 @dataclass
@@ -273,6 +320,53 @@ def _fetch_articles(candidates: list[tuple[date, str]], *, max_articles: int,
     return urls, articles
 
 
+def _dated_subs(source: Source, *, max_articles: int = 3, log=print) -> list[str]:
+    """索引页 -> 纯数字文章 ID -> 正文里的 `sub/clash-YYYYMMDD.yaml`。
+
+    为什么要绕这一层而不是直接按日期拼地址：文章 ID 与日期无关（`/13783` 是
+    2026-10-24 那篇），所以「今天是几号」推不出「哪篇文章是最新的」。文章里的
+    文件名才是唯一可信的日期来源。
+
+    兜底用 `{date}` 模板按日期拼（和 `_gh_uploads` 同一套思路）：文章页结构一变，
+    这条路还能活。顺序是「先文章、后日期」，因为文章给的日期是**源站自己说的**。
+    """
+    page = fetch(source.url, referer=origin_of(source.url))
+    origin = origin_of(source.url).rstrip("/")
+
+    ids: dict[int, str] = {}
+    for match in _HREF_RE.finditer(page):
+        href = match.group(1).strip()
+        url = href if href.startswith("http") else origin + "/" + href.lstrip("/")
+        hit = _ARTICLE_ID_RE.match(url)
+        if hit:
+            ids[int(hit.group(1))] = url
+
+    for _, article_url in sorted(ids.items(), reverse=True)[:max_articles]:
+        try:
+            html = fetch(article_url, referer=origin, retries=1, timeout=20)
+        except FetchError as exc:
+            log(f"    [warn] 文章抓取失败 {article_url}: {exc}")
+            continue
+        hits = [m.group(0) for m in _DATED_SUB_RE.finditer(html)]
+        if hits:
+            return list(dict.fromkeys(hits))
+
+    if ids:
+        log(f"    [warn] {len(ids)} 篇文章里都没找到 sub/clash-YYYYMMDD.yaml，改按日期拼")
+    today = datetime.now().date()
+    for back in range(6):
+        url = source.extra[0].replace(
+            "{date}", (today - timedelta(days=back)).strftime("%Y%m%d")
+        )
+        try:
+            if fetch(url, referer=origin, retries=1, timeout=20).strip():
+                log(f"    按日期命中 {url}")
+                return [url]
+        except FetchError:
+            continue
+    return []
+
+
 def _gh_headers() -> dict:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     headers = {"Accept": "application/vnd.github+json"}
@@ -340,6 +434,14 @@ def discover(source: Source, *, max_articles: int = 3, log=print) -> tuple[list[
 
     if source.kind == "gh-uploads":
         return _gh_uploads(source.url, log=log), []
+
+    # `direct`：订阅地址就是接口本身。不去抓页面 —— 页面抓不到时（改版、Cloudflare
+    # 挑战）连接口也一起没了，而接口才是唯一必要的东西。
+    if source.kind == "direct":
+        return list(source.extra), []
+
+    if source.kind == "dated-sub":
+        return _dated_subs(source, max_articles=max_articles, log=log), []
 
     page = fetch(source.url, referer=origin_of(source.url))
     articles: list[str] = []

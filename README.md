@@ -1,6 +1,6 @@
 # 节点聚合工具（每日自动测速）
 
-每天自动抓取 10 个节点源站的最新数据，**真实下载测速**后按出口地区重命名，
+每天自动抓取 14 个节点源站的最新数据，**真实下载测速**后按出口地区重命名，
 每次只保留 **80** 个节点，产出可直接导入 Clash Verge / Mihomo / ClashX Meta 的配置文件。
 
 ```
@@ -8,14 +8,16 @@ CNB（中国大陆）    采集 → 去重 → TCP 预筛 → 延迟测速（HTT
         ↓ 提交到本仓库 main（公开可读，不需要任何令牌）
 GitHub runner      自己按 cron 来取，经每个节点下载 Cloudflare 测速文件 → speed.json
         ↓ 提交回 GitHub 自己的 main
-CNB（中国大陆）    轮询 raw 取回（run_id 对得上才算）→ 出口地区识别 → 重命名
+CNB（中国大陆）    轮询 raw 取回（run_id 对得上才算）→ 出口地区识别 → 纯净度
                    → 同出口去重 → 取 80 → 产出 → 提交回 CNB
         ↓ GitHub 侧等 report.json 的 run_id 对上，把产物复制一份回 GitHub
 ```
 
-- 节点名格式：`日本-01-12.5MB/S`、`美国-03-8.4MB/S`、`中国香港-02-25.1MB/S`
+- 节点名格式：`日本-01-12.5MB/S·净85`、`美国-03-8.4MB/S·净80`
   - 地区取自**实测出口 IP**，不是源站标注的国旗
   - 速度是**实测平均下载速度**（不含握手时间，见 §5），不是源站宣称值
+  - `·净NN` 是出口 IP 纯净度 0~100（越高越像干净住宅 IP，见 §五），
+    查不到时**不写**这个后缀 —— 未知不等于满分
 - **两段测速跑在两台机器上**：延迟在 CNB（判据是「国内能不能连上」），
   下载在 GitHub（CNB 的出口只有 3~4 MB/s，节点再快也读成 3~4）。
   代价是速度变成「GitHub runner → 节点」，见 §二。
@@ -220,7 +222,7 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 
 ## 四、源站清单
 
-10 个源站，5 种页面结构，各配一个适配器（`clashhunter/sources.py`）：
+14 个源站，7 种页面结构，各配一个适配器（`clashhunter/sources.py`）：
 
 | # | 源站 | 适配器 | 订阅地址从哪来 | 2026-10-24 实测 |
 |---|---|---|---|---:|
@@ -234,6 +236,10 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 | 8 | `zhuhaiuk/free-nodes` | `github-raw` | 仓库固定文件名 raw | 45 |
 | 9 | `TG-NAV/nodeshare` | `github-raw` | 自身产出为空，回退到它声明的上游 | 33 ⚠️ |
 | 10 | `freeclashverge.github.io` | `gh-uploads` | `uploads/YYYY/MM/<n>-YYYYMMDD.yaml` 取最新日期 | 4769 |
+| 11 | `hello-world-1989/cn-news` | `github-raw` | 仓库固定文件名 `clash-free.yaml` | 6 |
+| 12 | `sunmiao4458/free-proxy-airport` | `github-raw` | 仓库固定文件名 `output/clash.yaml` | 23 |
+| 13 | `zmxoo.xyz` | `direct` | 接口本身就是订阅（`tian.zmxoo.xyz/subapi`） | 130 |
+| 14 | `xinshoucun.net` | `dated-sub` | 数字文章 ID → 正文里的 `sub/clash-YYYYMMDD.yaml` | 168 |
 
 合计 **13270 原始 → 2724 去重 → 2405 唯一端点 → 1311 通过 TCP 预筛 → 取 80**。
 
@@ -257,6 +263,19 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 两家订阅正文字节数完全相同（6516 B 的 `.yaml` / 4052 B 的 `.txt`），
 解析出的 15 个节点也完全一致。不需要特殊处理 —— 去重会消掉一份。
 
+**④ `zmxoo` 的订阅地址没有文件扩展名，所以 `manifest` 那个适配器看不见它。**
+页面上是 `https://tian.zmxoo.xyz/subapi`（Clash）与 `/linkapi`（小火箭 base64），
+而 `manifest` 的正则是 `\.(ya?ml|txt)` —— 匹配不上。于是新加了 `direct`：
+`extra` 里直接写订阅地址，**连页面都不抓**。
+为什么不抓页面：页面改版或被 Cloudflare 挑战时，连接口一起没了；而接口才是唯一必要的东西。
+代价是端点变了不会自动跟随，但那种情况下 `manifest` 也一样抓不到，区别只是报错信息更清楚。
+
+**⑤ `xinshoucun` 的文章 ID 是纯数字，没有日期，日期只在正文里。**
+`/13783` 是 2026-10-24 那篇 —— 从「今天是几号」推不出「哪篇最新」，
+所以 `dated-sub` 适配器走「索引页 → ID 最大的文章 → 正文里的 `sub/clash-20261024.yaml`」。
+兜底再按日期拼 `sub/clash-{date}.yaml`（今天往前试 6 天），
+因为文章给的日期是**源站自己说的**，比猜准。
+
 ### 源站改版了怎么办
 
 每个源站在 `report.md` 里都有一行状态，三种状态要分清：
@@ -272,13 +291,13 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 
 | 阶段 | 做什么 | 典型数量 |
 |---|---|---|
-| ① 采集 | 10 个源站，5 种页面结构 | 约 13000 条原始 |
+| ① 采集 | 14 个源站，7 种页面结构 | 约 13000 条原始 |
 | ② 解析去重 | `vmess/vless/trojan/ss/ssr/hysteria2/tuic` + Clash YAML，按 `(类型,服务器,端口,凭据)` 去重 | 约 2700 条 |
 | ③ TCP 预筛 | 只保留 443/8443 等端口能建连的 | 约 1300 条 |
 | ④ 延迟测速 | 内核真实过一遍节点，用 **HTTPS** 探测拿端到端延迟（只用于排序，**不用来砍数量**） | 约 700–900 条 |
 | ⑤ 下载测速 | 先量 runner 出口管道，再据此定并发与下载量；**全部延迟可用节点都测**，每节点绑一个独立入站端口 | 同时探测出口 IP |
 | ⑥ 复测 | 把初筛最快的 300 个用**低并发 + 24 MB + 多源取中位数**重测一次，同时消除抢带宽造成的低估、0.05 s 分母地板截断、单一源偏置 | 300 条 × 源数 |
-| ⑦ 挑选 + 重命名 | 按实测速度排，再按国家配额取前 80 | `地区-序号-速度MB/S` |
+| ⑦ 挑选 + 重命名 | 按实测速度排，再按国家配额取前 80；同时算出出口 IP 纯净度 | `地区-序号-速度MB/S·净NN` |
 
 ### 为什么是「先全部测速，再挑」
 
@@ -578,8 +597,56 @@ curl -s https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/probe.json
 不是任何客户端的地址，GeoIP 照样给它编了个国家，于是节点名里的国家是错的。
 现在 `_plausible_exit_ip()` 要求：能解析成 IP、是公网地址、IPv4 末位不是 `.0`/`.255`。
 
-### 为什么延迟排序不再用来砍数量
+### 出口 IP 纯净度：`·净NN` 是怎么来的
 
+免费节点绝大多数是机房 IP，登录、注册、看流媒体时被拦是常态。所以每个节点名后面
+带一个 **0~100 的纯净度**，直接告诉你「这个出口像不像一个干净的住宅 IP」：
+
+```
+韩国-01-20.0MB/S·净80       机房 80（欺诈 1）
+俄罗斯-02-7.4MB/S·净100     ISP  100（欺诈 0）
+爱沙尼亚-01-13.4MB/S·净47   机房 47（欺诈 53）
+```
+
+**算法**（`clashhunter/purity.py`，纯函数，`tests/test_purity.py` 逐组合钉住）：
+
+| 信号 | 来源 | 扣分 |
+|---|---|---|
+| 被标为代理 / VPN | ip-api `proxy` | −25 |
+| 机房 IP（datacenter） | ip-api `hosting` | −20 |
+| 移动网络（CGNAT 共享出口，滥用率高） | ip-api `mobile` | −5 |
+| 第三方欺诈分 `N` | Scamalytics 的 `Fraud Score` | 取 `min(分数, 100 − N)` |
+
+**为什么不是直接跑 [xykt/IPQuality](https://github.com/xykt/IPQuality)**：
+它每个 IP 要打 8 个风险库、7 个流媒体、11 家邮局、400+ 个 DNSBL，单 IP 一分钟起步；
+每天要标 80 个节点就是一小时以上。其中 6 个库还需要 API key，
+而这个仓库一条密钥都不放（CNB 没有环境变量入口，写进公开仓库等于公开）。
+所以只取**无密钥、单 IP 亚秒级**的两路，判据仍然是 IPQuality 那三块里的
+「基础信息 / IP 类型 / 风险评分」。
+
+> ⚠️ **`100` 分的准确含义是「这两路都没标记它」，不是「这是住宅 IP」。**
+> ip-api 对一个 IP 返回 `hosting=false, proxy=false` 时我们无从知道它是家宽还是漏标；
+> 实测 19 个真实节点里就有 2 个落在这一档。想要更硬的结论只能上多库交叉验证，
+> 那就回到「需要密钥 + 单 IP 一分钟」的老问题上。
+>
+> ⚠️ **未知 ≠ 满分。** ip-api 没返回这个出口 IP 时 `score` 是 `null`，
+> 节点名里**不写**后缀，`report.json` 里 `purity.known=false`。
+> 写 `·净100` 或 `·净?` 都会让人把「没查到」当成「很干净」。
+
+两路信号的成本差得很远，所以分开控制：
+
+- **ip-api 那一路是白拿的** —— `geoip.lookup_batch()` 本来就要查这批出口 IP 的归属地，
+  `proxy/hosting/mobile` 只是同一次 batch 请求里多要三个字段，不多发请求、不多占配额。
+- **Scamalytics 那一路要限流** —— 每个 IP 抓一次 35 KB 的页面。所以 `--fraud-top`
+  默认 **80**（只给最终产物那批，不给候选池几百个），并带 **90 秒总预算**、
+  单请求不重试、解析不出就当没有。抓不到时分数退回只看 IP 类型，
+  **不会挡住出产物**（`--fraud-top 0` 可以整段关掉）。
+
+这条链有没有跑通，看两个地方：`dist/probe.json` 的 `purity` 字段（两个接口从 CNB
+能不能打到、`hosting` 有没有正确返回），以及 `report.md` 的「出口 IP 纯净度」一节。
+
+
+### 为什么延迟排序不再用来砍数量
 早期用「延迟最低的前 N 个」当测速候选，等于只挑了离测速机最近的节点：
 实测在美西机器上，最终 200 个节点里 179 个是美国（美国 10–40 ms，
 亚洲 150–250 ms 排不到前面）。现在延迟只用来排序，国家多样性靠**最终挑选**那一步的
@@ -643,6 +710,9 @@ python main.py --out dist --work work --speed-bytes 6000000 --refine-bytes 40000
 # 复测只用一个源（省流量，但回到「只代表到那个站有多快」）
 python main.py --out dist --work work --speed-sources 0
 
+# 纯净度：默认给最终 80 个抓 Scamalytics 欺诈分（90 秒预算，抓不到就降级）
+python main.py --out dist --work work --fraud-top 0     # 只留 ip-api 那一路，零额外请求
+
 # 单元测试
 python tests/test_parsers.py
 python tests/test_bisect.py
@@ -651,6 +721,7 @@ python tests/test_pipe.py
 python tests/test_refine.py
 python tests/test_selection.py
 python tests/test_sources.py
+python tests/test_purity.py
 python tests/test_web.py
 python tests/test_ci_commit.py
 python tests/test_handoff.py
@@ -681,10 +752,10 @@ python tests/test_handoff.py
 | 文件 | 说明 |
 |---|---|
 | `dist/clash.yaml` | 完整 Clash 配置（可直接导入） |
-| `dist/report.md` | 本次构建报告：各阶段数量、地区分布、速度 Top N |
-| `dist/report.json` | 同上，机器可读 |
+| `dist/report.md` | 本次构建报告：各阶段数量、地区分布、速度 Top N、**出口 IP 纯净度** |
+| `dist/report.json` | 同上，机器可读；每条 `nodes[].purity` 带 `known/kind/score/fraud/proxy/hosting/mobile/isp/as` |
 | `dist/runner-geo.json` | 测速机出口 IP 与归属地（判断测速视角） |
-| `dist/probe.json` | **只在 `push` 触发时生成**：runner 环境自检（见 §3.4） |
+| `dist/probe.json` | **只在 `push` 触发时生成**：runner 环境自检（含 `purity` 字段，见 §3.4） |
 
 ---
 
