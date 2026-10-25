@@ -10,20 +10,23 @@
 # 一轮的走向：
 #   采集 → 延迟测速（CNB）→ dist/candidates.json
 #        → 提交到本仓库（公开可读）
-#        → GitHub 的 speedtest 工作流**常驻看守**（一个 job 活 5.5 小时、每 30 秒
-#          看一眼 candidates.json），看到新的 run_id 就经节点测速，
-#          把 dist/speed.json 提交回它自己的仓库
+#        → **CNB 用令牌 POST `workflow_dispatch` 叫醒 GitHub**（scripts/gh_dispatch.sh，秒级）
+#        → GitHub 那边只跑一轮：经节点测速 → 把 dist/speed.json 提交回它自己的仓库
 #        → CNB 轮询 GitHub 的公开 raw 取回（run_id 对得上才算）
 #        → 国家判定 / 去重 / 重命名（CNB）→ 提交回 CNB
 #        → GitHub 侧等 report.json 的 run_id 对上，再把产物复制一份回去
 #
-# ⚠️ **全程零密钥**。曾经想让 CNB 直接推到 GitHub，那需要一个 GitHub PAT ——
-#    但这个仓库是**公开**的：写进 .cnb.yml 等于把写权限发给所有人，而且 GitHub
-#    的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销**，过几小时就坏。
-#    所以方向反过来：GitHub 自己来取（读公开 raw），写也只写它自己的仓库。
-#    代价是触发只能靠 GitHub 自己 —— 所以那边必须是常驻看守，不能是「cron 起来
-#    看一眼就退出」：公开仓库的 schedule 实测每 117~148 分钟才触发一次（2026-10-25，
-#    6 次运行全量对照），「每 10 分钟看一眼」这个形状等于根本不看。
+# ⚠️ **令牌不写在本文件里，也不写进这个仓库**。这个仓库是**公开**的：写进去等于把
+#    写权限发给所有人，而且 GitHub 的密钥扫描会把公开仓库里出现的 `ghp_` 令牌
+#    **自动吊销** —— 过几小时就坏。正确做法是 CNB 的「密钥仓库」（仓库类型选
+#    `密钥仓库`，只能网页编辑、不能 clone），下面每个 job 的 `imports:` 把它里面的
+#    键注入成环境变量。**没有令牌时 `gh_dispatch.sh` 只警告不失败**，退回 GitHub 自己
+#    的 cron 兜底（实测 117~148 分钟才触发一次，慢但能通）。
+#
+# ⚠️ 在此之前用过两种「零密钥」的形状，都不要再回去：
+#    1. 「cron 每 10 分钟看一眼」—— 公开仓库的 schedule 实测两小时才一次，等于不看；
+#    2. 「一个 job 常驻 5.5 小时轮询」—— 能work，但在 Actions 页面上就是一行
+#       `in_progress` 挂着，看起来像卡死，已经被误取消过一次（run 40155272778）。
 #
 # 三个入口：
 #   1. web_trigger_daily —— 分支详情页的「立即跑一轮」按钮，参数可填
@@ -49,6 +52,12 @@ main:
     - name: daily-nodes-manual
       docker:
         image: python:3.11
+      # ⚠️ 取消下面注释之前，**必须先在 CNB 建好密钥仓库**（类型选「密钥仓库」）：
+      #      https://cnb.cool/new/repos → 类型「密钥仓库」→ 名字 clash-daily-secrets
+      #      网页里建 envs.yml，内容一行：GH_DISPATCH_TOKEN: ghp_xxx
+      #    建好之前不要取消注释：imports 解析不到会让**整条流水线起不来**。
+      # imports:
+      #   - https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml
       stages: &daily_stages
         - name: 安装依赖
           script: |
@@ -116,12 +125,18 @@ main:
             CI_FORCE=1 CI_AUTHOR_NAME=clash-daily-ci CI_AUTHOR_EMAIL=ci@local \
               bash scripts/ci_commit.sh "chore(handoff): 发布候选 ${RUN_ID}"
 
+        - name: 叫醒 GitHub 测速
+          script: |
+            # 主路径：拿密钥仓库注入的令牌直接 POST `workflow_dispatch`，秒级开始。
+            # 没配令牌时只警告不失败 —— 退回 GitHub 自己的 cron 兜底。
+            set -e
+            bash scripts/gh_dispatch.sh
+
         - name: 等 GitHub 测速
           script: |
-            # 全程零密钥：这里只轮询 GitHub 的公开 raw，等 run_id 对上的 speed.json。
-            # GitHub 侧是**常驻看守**（每 30 秒看一眼上面发布的 candidates.json），
-            # 正常情况下 30 秒内就开始测；等不到时脚本会去读 GitHub Actions 的公开
-            # 状态，说清是「没人叫它」还是「叫了但跳过了」，而不是干等 40 分钟。
+            # 这里只轮询 GitHub 的公开 raw，等 run_id 对上的 speed.json。
+            # 正常情况下上一步已经把它叫醒了，30 秒内就有结果；等不到时脚本会去读
+            # GitHub Actions 的公开状态，说清是「没人叫它」还是「叫了但跳过了」。
             set -e
             bash scripts/wait_speed.sh dist/candidates.json
 
@@ -154,6 +169,9 @@ main:
     - name: daily-nodes
       docker:
         image: python:3.11
+      # 和上面那个入口一样：建好密钥仓库后再取消注释（两处都要）。
+      # imports:
+      #   - https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml
       stages: *daily_stages
 
   # ---------- 入口 3：push 只跑自检，不测速 ----------
