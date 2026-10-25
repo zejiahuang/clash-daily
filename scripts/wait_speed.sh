@@ -201,6 +201,15 @@ print(f"  run_id={d.get('run_id')} 可用 {s.get('ok')}/{s.get('total')} "
       f"耗时 {d.get('seconds')}s 位置 {d.get('vantage')}")
 for item in s.get("errors") or []:
     print(f"  {item['count']:>4} 个  {item['reason']}")
+# 复测那一轮的战果。没有这行的话，「复测 300 个里 242 个被 429 拒了」和
+# 「复测全成功」在 CNB 的日志里一模一样 —— 而产物里的速度是初筛值还是复测值，
+# 差别很大（初筛 32 并发抢带宽，读数偏低）。
+r = s.get("refine") or {}
+if r:
+    print(f"  复测 {r.get('ok')}/{r.get('attempted')} 可用，"
+          f"其中 {r.get('improved')} 个比初筛更快")
+    for count, reason in r.get("reasons") or []:
+        print(f"  {count:>4} 个  {reason}")
 PY
       exit 0
     fi
