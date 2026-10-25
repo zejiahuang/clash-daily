@@ -28,10 +28,16 @@ API="https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatch
 
 if [ -z "${GH_DISPATCH_TOKEN:-}" ]; then
   echo "⚠️ 没有 GH_DISPATCH_TOKEN —— 没法主动叫醒 GitHub"
-  echo "   配法（一次性，约 1 分钟）："
-  echo "     1) https://cnb.cool/new/repos 建仓库，**仓库类型选「密钥仓库」**，名字 clash-daily-secrets"
-  echo "     2) 在它的网页里建 envs.yml，内容一行：GH_DISPATCH_TOKEN: <GitHub 令牌>"
-  echo "     3) 把 .cnb.yml 里 imports: 那三行的注释去掉（文件里有说明）"
+  echo "   配法（一次性，约 2 分钟）："
+  echo "     1) https://cnb.cool/new/repos → 仓库类型选「密钥仓库」→ 名字 clash-daily-secrets"
+  echo "     2) 在它的网页里建 envs.yml，内容："
+  echo '          allow_slugs: "StriveGlory/clash-daily"   # slug，不是 URL'
+  echo "          allow_branches: main"
+  echo '          allow_events: [crontab, push, "web_trigger*"]'
+  echo "          GH_DISPATCH_TOKEN: <GitHub 令牌>"
+  echo "        ⚠️ allow_* 不能省：默认判据是「触发者是不是密钥仓库的成员」，而定时任务"
+  echo "           的身份是「最后改 crontab 的那个人」—— 必然不过，表现为令牌静默为空。"
+  echo "     3) 把 .cnb.yml 里两处 imports: 的注释去掉（文件里有说明）"
   echo "   现在退回 GitHub 自己的 cron 兜底：实测 117~148 分钟才触发一次。"
   exit 0
 fi
