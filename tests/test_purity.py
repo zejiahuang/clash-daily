@@ -198,6 +198,49 @@ def test_summary(problems: list[str]) -> None:
         problems.append(f"summary 的 with_fraud 应为 1，实得 {got['with_fraud']}")
 
 
+def test_verify_dist_accepts_purity_suffix(problems: list[str]) -> None:
+    """产物校验器必须认「国家-序号-速度MB/S·净N」—— 这是命名与校验各写一份的代价。
+
+    2026-10-25 现场：CNB 那一轮跑完了，产物名字全对（`美国-01-112.1MB/S·净80`），
+    但 `scripts/verify_dist.py` 的正则只认到 `MB/S` 结尾，于是
+    **整轮被判「80 个节点名不符合格式」而失败** —— 报错指向数据，问题在校验器。
+
+    这里必须带两个方向：
+      · 带后缀、不带后缀的**都要通过**（后缀是可选的：查不到纯净度就不写）；
+      · 写坏的后缀**仍然要被拒** —— 否则「通过」可能只是正则被放宽到什么都不检查。
+    """
+    import tempfile
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import verify_dist  # noqa: E402
+
+    def run(names: list[str]) -> list[str]:
+        doc = {
+            "proxies": [{"name": n, "type": "ss", "server": "1.2.3.4", "port": 443,
+                         "cipher": "aes-128-gcm", "password": "x"} for n in names],
+            "proxy-groups": [
+                {"name": "节点选择", "type": "select", "proxies": names},
+                {"name": "自动选择", "type": "url-test", "proxies": names},
+            ],
+        }
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "clash.yaml"
+            path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+            return verify_dist.verify(path)
+
+    good = ["美国-01-112.1MB/S·净80", "美国-02-67.8MB/S·净94",
+            "日本-01-12.5MB/S", "日本-02-3.0MB/S·净100", "香港-01-8.8MB/S·净0"]
+    for problem in run(good):
+        problems.append(f"正常节点名被判不合格：{problem}")
+
+    # 对照：后缀写坏（少了 `·净` 分隔、分数不是数字、分数越界）必须仍然被拒
+    for bad in ("美国-01-12.5MB/S净80", "美国-01-12.5MB/S·净", "美国-01-12.5MB/S·净150"):
+        if not run([bad]):
+            problems.append(f"坏节点名 {bad!r} 竟然通过了校验 —— 说明断言没在检查")
+
+
 def main() -> int:
     problems: list[str] = []
     test_score_matrix(problems)
@@ -206,6 +249,7 @@ def main() -> int:
     test_fraud_fails_open(problems)
     test_finalize_name_and_record(problems)
     test_summary(problems)
+    test_verify_dist_accepts_purity_suffix(problems)
 
     if problems:
         print(f"✗ {len(problems)} 处失败")

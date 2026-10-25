@@ -113,7 +113,8 @@ GitHub 的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销
 所以令牌放在 CNB 的**密钥仓库**里（见 `docs.cnb.cool/zh/repo/secret.html`）：
 
 1. <https://cnb.cool/new/repos> 建一个仓库，**仓库类型选「密钥仓库」**（本文按
-   `clash-daily-secrets` 写）。它不是普通私有仓库：**禁止 clone、禁止本地 push、
+   `key` 写 —— 本仓库实际用的就是 `StriveGlory/key`）。它不是普通私有仓库：
+   **禁止 clone、禁止本地 push、
    只能网页编辑** —— 这正是它存在的理由。
 2. 在它的网页里建 `envs.yml`，内容照抄下面这份（**`allow_*` 不能省**，原因见下）：
 
@@ -130,7 +131,7 @@ GitHub 的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销
    ```
 
 3. 把 `.cnb.yml` 里 `imports:` 那几行的注释去掉，指向这个文件的 raw 地址：
-   `https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml`
+   `https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml`
 
 > ⚠️ **`allow_*` 为什么不能省**：默认的判据是「流水线触发者是不是这个密钥仓库的
 > 开发者/负责人」。而定时任务的身份是**最后修改 `crontab` 配置并推送的那个人** ——

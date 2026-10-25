@@ -8,7 +8,7 @@
 判据都是**客户端会拒绝加载**的硬条件，不是风格问题：
   1. 没有节点 ⇒ 配置无意义
   2. 节点名重复 ⇒ Clash 直接拒绝加载
-  3. 名字不符合 `国家-序号-速度MB/S` ⇒ 使用者看不出速度
+  3. 名字不符合 `国家-序号-速度MB/S[·净N]` ⇒ 使用者看不出速度
   4. 缺 server/port ⇒ 加载报错
   5. 节点没进「自动选择」组 ⇒ 客户端切到该组时用不上
 
@@ -25,8 +25,13 @@ from pathlib import Path
 
 import yaml
 
-# 名字形如 `日本-01-12.5MB/S`。序号至少两位，速度一位小数。
-NAME_PATTERN = re.compile(r"^.+-(\d{2,})-(\d+\.\d)MB/S$")
+# 名字形如 `日本-01-12.5MB/S`，拿到出口 IP 纯净度时带 `·净85` 后缀。
+# ⚠️ 后缀必须允许，而且必须是**可选**的：`builder._finalize` 只在真的查到纯净度
+#    时才追加它（查不到就留空，见那里的注释）。这里曾经只认到 `MB/S` 结尾 ——
+#    于是**每一份正常产物都校验失败**，报错却是「80 个节点名不符合格式」，
+#    看起来像数据坏了。判据要跟着命名走，不能各写一份。
+NAME_PATTERN = re.compile(
+    r"^.+-(\d{2,})-(?P<speed>\d+\.\d)MB/S(?:·净(?P<purity>\d{1,3}))?$")
 
 
 def verify(path: Path) -> list[str]:
@@ -47,7 +52,17 @@ def verify(path: Path) -> list[str]:
     bad = [n for n in names if not NAME_PATTERN.match(n)]
     if bad:
         problems.append(
-            f"{len(bad)} 个节点名不符合「国家-序号-速度MB/S」格式：{bad[:5]}")
+            f"{len(bad)} 个节点名不符合「国家-序号-速度MB/S[·净N]」格式：{bad[:5]}")
+
+    # 纯净度写在名字里，所以它的取值也是「对外承诺」的一部分：
+    # 超出 0~100 说明打分函数坏了，而名字看起来仍然正常。
+    # 用具名组取值（而不是 group(3)）：正则哪天被改回去，这里只是「取不到」，
+    # 不会 IndexError —— 校验器自己崩掉比校验失败更难查。
+    for name in names:
+        match = NAME_PATTERN.match(name)
+        score = match.groupdict().get("purity") if match else None
+        if score and not 0 <= int(score) <= 100:
+            problems.append(f"节点名里的纯净度越界（应 0~100）：{name}")
 
     missing = [n for n, p in zip(names, proxies) if not (p.get("server") and p.get("port"))]
     if missing:

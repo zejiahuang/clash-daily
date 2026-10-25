@@ -29,7 +29,7 @@ API="https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatch
 if [ -z "${GH_DISPATCH_TOKEN:-}" ]; then
   echo "⚠️ 没有 GH_DISPATCH_TOKEN —— 没法主动叫醒 GitHub"
   echo "   配法（一次性，约 2 分钟）："
-  echo "     1) https://cnb.cool/new/repos → 仓库类型选「密钥仓库」→ 名字 clash-daily-secrets"
+  echo "     1) https://cnb.cool/new/repos → 仓库类型选「密钥仓库」→ 名字 key"
   echo "     2) 在它的网页里建 envs.yml，内容："
   echo '          allow_slugs: "StriveGlory/clash-daily"   # slug，不是 URL'
   echo "          allow_branches: main"
