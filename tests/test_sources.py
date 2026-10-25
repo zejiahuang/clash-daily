@@ -15,11 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from clashhunter import sources as source_mod  # noqa: E402
 from clashhunter.sources import (  # noqa: E402
     SOURCES,
     _article_links,
+    _dated_subs,
     _scan_article,
     _wp_posts,
+    discover,
     parse_subscription,
 )
 
@@ -61,20 +64,43 @@ INLINE_ARTICLE = """
 <p>vless://11111111-2222-3333-4444-555555555555@example.com:443?type=ws#demo</p>
 """
 
+# xinshoucun.net 分类页片段（2026-10-25 实测）：文章是纯数字 ID，**没有日期**，
+# 而且同一篇会出现两次（标题链接 + 阅读全文）。导航栏里也有一堆数字页（/40、/137）。
+XSC_INDEX = """
+<a href="https://xinshoucun.net/13783">「新手村」10月24日 | 实测可用168个</a>
+<a href="https://xinshoucun.net/13783">阅读全文</a>
+<a href="https://xinshoucun.net/13780">「新手村」10月23日 | 实测可用xxx个</a>
+<a href="https://xinshoucun.net/13777">「新手村」10月22日 | 实测可用xxx个</a>
+<a href="https://xinshoucun.net/40">关于我们</a>
+<a href="https://xinshoucun.net/wp-json/wp/v2/categories/76">分类 76</a>
+"""
+
+# 文章正文片段：订阅地址就在 <a href> 里，文件名带 YYYYMMDD —— 日期只在这里出现。
+XSC_ARTICLE = """
+<p style="margin:0 0 8px"><strong>Clash 订阅：</strong>
+<a href="https://xinshoucun.net/sub/clash-20261024.yaml" target="_blank">https://xinshoucun.net/sub/clash-20261024.yaml</a></p>
+<p>节点每天更新，建议每日重新导入获取最新节点。</p>
+"""
+
 
 def main() -> int:
     problems: list[str] = []
 
     # 1. 源站清单本身：sid 唯一、kind 都是已知值
-    known_kinds = {"manifest", "index", "wp-dated", "github-raw", "gh-uploads"}
+    known_kinds = {"manifest", "index", "wp-dated", "github-raw", "gh-uploads",
+                   "direct", "dated-sub"}
     sids = [s.sid for s in SOURCES]
     if len(sids) != len(set(sids)):
         problems.append(f"SOURCES 里有重复 sid: {sids}")
-    if len(sids) != 10:
-        problems.append(f"源站数量 {len(sids)} != 10（少接一个就是少一批节点）")
+    # ⚠️ 这个数字是「接了几个源」，改 SOURCES 时必须同步 —— 少接一个就是少一批节点，
+    #    而少接不会报错，只会安静地少几十个候选。
+    if len(sids) != 14:
+        problems.append(f"源站数量 {len(sids)} != 14（少接一个就是少一批节点）")
     for source in SOURCES:
         if source.kind not in known_kinds:
             problems.append(f"{source.sid} 的 kind={source.kind!r} 没有对应适配器")
+        if source.kind in ("direct", "dated-sub", "github-raw") and not source.extra:
+            problems.append(f"{source.sid} 的 kind={source.kind} 但没有 extra 地址")
 
     # 2. CMS 索引：.htm 也要认，且按日期倒序、去重
     arts = _article_links(LANCEX_INDEX, "https://lancex.net/free-node/")
@@ -125,12 +151,96 @@ def main() -> int:
     if len(got_b64) != 1:
         problems.append(f"base64 包体解析出 {len(got_b64)} 个，应为 1（nodes.txt / .txt 都是这种）")
 
+    # 6. direct：订阅地址就是接口本身，**不许去抓页面**
+    #    判据是「fetch 有没有被调用」—— 页面抓不到（改版 / Cloudflare 挑战）时
+    #    连接口也一起没了，而接口才是唯一必要的东西。
+    direct = [s for s in SOURCES if s.kind == "direct"]
+    if not direct:
+        problems.append("没有任何 direct 源（zmxoo 那种无扩展名的订阅接口）")
+    else:
+        saved = source_mod.fetch
+
+        def _boom(url, **kwargs):
+            raise AssertionError(f"direct 源不该抓页面：{url}")
+
+        source_mod.fetch = _boom
+        try:
+            urls, _ = discover(direct[0], log=lambda *a, **k: None)
+        except AssertionError as exc:
+            urls = []
+            problems.append(str(exc))
+        finally:
+            source_mod.fetch = saved
+        if not urls or urls != list(direct[0].extra):
+            problems.append(f"direct 源应原样返回 extra，实得 {urls}")
+
+    # 7. dated-sub：数字文章 ID -> 正文里的 sub/clash-YYYYMMDD.yaml
+    dated = [s for s in SOURCES if s.kind == "dated-sub"]
+    if not dated:
+        problems.append("没有任何 dated-sub 源（xinshoucun 那种纯数字文章 ID）")
+    else:
+        src = dated[0]
+        pages = {
+            src.url: XSC_INDEX,
+            "https://xinshoucun.net/13783": XSC_ARTICLE,
+            "https://xinshoucun.net/13780": "<p>这篇里没有订阅地址</p>",
+        }
+        saved = source_mod.fetch
+
+        def _serve(url, **kwargs):
+            if url in pages:
+                return pages[url]
+            raise source_mod.FetchError(f"404 {url}")
+
+        source_mod.fetch = _serve
+        try:
+            got = _dated_subs(src, log=lambda *a, **k: None)
+        finally:
+            source_mod.fetch = saved
+        want = "https://xinshoucun.net/sub/clash-20261024.yaml"
+        if got != [want]:
+            problems.append(f"dated-sub 应解析出 {want!r}，实得 {got}")
+        # 必须取 ID 最大的那篇（导航里的 /40、/137 不该被当成文章）
+        if got and "20261024" not in got[0]:
+            problems.append(f"dated-sub 没取最新那篇（ID 最大），实得 {got}")
+
+        # 文章页全都拿不到订阅地址时，退回按日期拼模板
+        saved = source_mod.fetch
+
+        def _only_index(url, **kwargs):
+            if url == src.url:
+                return XSC_INDEX
+            if "/sub/clash-" in url:
+                return "proxies: []\n"
+            raise source_mod.FetchError(f"404 {url}")
+
+        source_mod.fetch = _only_index
+        try:
+            fallback = _dated_subs(src, log=lambda *a, **k: None)
+        finally:
+            source_mod.fetch = saved
+        if not fallback or "/sub/clash-" not in (fallback[0] if fallback else ""):
+            problems.append(f"dated-sub 的日期兜底没生效：{fallback}")
+
+    # 8. github-raw 的地址拼接：base 带尾斜杠 + extra 是相对路径
+    for sid in ("cn-news", "sunmiao"):
+        src = next((s for s in SOURCES if s.sid == sid), None)
+        if src is None:
+            problems.append(f"缺少源 {sid}")
+            continue
+        urls, _ = discover(src, log=lambda *a, **k: None)
+        if not urls or not urls[0].startswith(src.url):
+            problems.append(f"{sid} 的 raw 地址拼错了：{urls}")
+        elif "//" in urls[0].split("://", 1)[1]:
+            problems.append(f"{sid} 的 raw 地址出现了双斜杠：{urls[0]}")
+
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:
             print("   -", item)
         return 1
-    print(f"✓ 源站适配器通过：{len(sids)} 个源、CMS(.htm)/WP(日期目录)/三种文章兜底/两种正文格式")
+    print(f"✓ 源站适配器通过：{len(sids)} 个源、CMS(.htm)/WP(日期目录)/direct(无扩展名接口)/"
+          f"dated-sub(数字ID->带日期文件)/三种文章兜底/两种正文格式")
     return 0
 
 

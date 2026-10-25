@@ -17,6 +17,7 @@ from . import countries as country_mod
 from . import geoip
 from . import netcheck
 from . import nodes as nodemod
+from . import purity as purity_mod
 from . import sources as source_mod
 from .mihomo import SPEED_URL, TEST_URL, Mihomo, _reason_counts, ensure_binary
 
@@ -55,6 +56,8 @@ class BuildResult:
     # 测速机所在位置。速度是「这台机器 → 节点」的实测值，换个地方测就是另一个数，
     # 所以必须写进订阅文件头部，否则使用者会把它当成自己那边的速度。
     vantage: str = ""
+    # 纯净度汇总（已知/未知、类型分布、中位分）。每条明细在 records[].purity。
+    purity: dict = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- 延迟测速
@@ -119,6 +122,9 @@ def build(
     max_nodes: int = 80,
     country_share: float = 0.2,
     top_per_country: int = 0,
+    # 给多少个最终节点去抓 Scamalytics 的欺诈分。0 = 只做 ip-api 那一路（零成本）。
+    # 默认 80 = 覆盖满额产物；候选池几百个全抓是十几分钟，而只有进产物的才有人看。
+    fraud_top: int = 80,
     no_speedtest: bool = False,
     vantage: str = "",
     stage: str = "all",
@@ -151,7 +157,7 @@ def build(
             candidates_path=candidates_path,
             speed_path=Path(speed_path) if speed_path else None,
             max_nodes=max_nodes, country_share=country_share,
-            top_per_country=top_per_country, log=log,
+            top_per_country=top_per_country, fraud_top=fraud_top, log=log,
         )
 
     # 1. 采集 -------------------------------------------------------------
@@ -382,11 +388,12 @@ def build(
         finally:
             mh.stop()
 
-    # 6. 国家判定 + 重命名 -------------------------------------------------
+    # 6. 国家判定 + 纯净度 + 重命名 ---------------------------------------
     return _finalize(
         result, candidates, probes, delays=delays, pre_codes=pre_codes,
         max_nodes=max_nodes, country_share=country_share,
-        top_per_country=top_per_country, started=started, log=log,
+        top_per_country=top_per_country, started=started,
+        fraud_top=fraud_top, log=log,
     )
 
 
@@ -399,11 +406,36 @@ def _run_id() -> str:
     return datetime.now(CST).strftime("%Y%m%dT%H%M%S")
 
 
+def _attach_purity(candidates: list[dict], probes: dict[str, dict],
+                   geo: dict[str, dict], *, fraud_top: int,
+                   log=print) -> dict[str, dict]:
+    """给最终节点算纯净度，返回 `{原节点名: 描述}`。
+
+    只对**最终选中的那批**跑欺诈分（`fraud_top` 个上限）：候选池有几百个，
+    每个抓一次 Scamalytics 的 35 KB 页面就是几十 MB 加十几分钟，而只有进产物的
+    那 80 个才有人看。ip-api 那一路是白拿的（见 `_resolve_countries`），不受此限。
+    """
+    exit_ips = {p["name"]: (probes.get(p["name"], {}).get("exit_ip") or "")
+                for p in candidates}
+    fraud: dict[str, int] = {}
+    if fraud_top > 0:
+        targets = [ip for ip in dict.fromkeys(exit_ips.values()) if ip][:fraud_top]
+        if targets:
+            fraud = purity_mod.fraud_scores(targets, log=log)
+    out: dict[str, dict] = {}
+    for name, ip in exit_ips.items():
+        out[name] = purity_mod.describe(geo.get(ip) or {}, fraud=fraud.get(ip))
+    known = sum(1 for v in out.values() if v["known"])
+    log(f"  纯净度：{known}/{len(out)} 个有数据"
+        + (f"，欺诈分 {len(fraud)} 个" if fraud else ""))
+    return out
+
+
 def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dict], *,
               delays: dict[str, int], pre_codes: dict[str, str], max_nodes: int,
               country_share: float, top_per_country: int, started: float,
-              log=print) -> BuildResult:
-    """第 6 步：排名 → 剔掉 0 速 → 同出口去重 → 国家判定 → 分层取样 → 重命名。
+              fraud_top: int = 0, log=print) -> BuildResult:
+    """第 6 步：排名 → 剔掉 0 速 → 同出口去重 → 国家判定 → 分层取样 → 纯净度 → 重命名。
 
     单独抽出来是因为它**不测任何东西**：输入只有「候选」和「测速结果」，
     所以 `all`（本机测完直接收尾）和 `finish`（GitHub 测完再收尾）走的是同一份代码。
@@ -429,7 +461,7 @@ def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dic
     candidates = _dedupe_by_exit(candidates, probes, log=log)
     result.stats.merged_exit = _before_merge - len(candidates)
 
-    code_of = _resolve_countries(candidates, probes, base=pre_codes, log=log)
+    code_of, geo = _resolve_countries(candidates, probes, base=pre_codes, log=log)
 
     if max_nodes > 0:
         # 单国上限：名额越少、国家越多，配额就越接近 1，越多名额落到「纯速度」上，
@@ -443,10 +475,13 @@ def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dic
             log(f"  单国上限 {cap} 个（{country_share:.0%} × {max_nodes}），"
                 f"超额部分让给别的国家")
 
+    # 纯净度必须在命名之前算完：分数是节点名的一部分（`·净85`）。
+    # 放在分层取样之后、分组之前 —— 只有进了最终名单的节点才值得去抓欺诈分。
+    purity_of = _attach_purity(candidates, probes, geo, fraud_top=fraud_top, log=log)
+
     grouped: dict[str, list[dict]] = defaultdict(list)
     for proxy in candidates:
         grouped[code_of.get(proxy["name"], "??")].append(proxy)
-
     ordered_codes = sorted(
         grouped,
         key=lambda c: (-len(grouped[c]), country_mod.zh_name(c) or c),
@@ -464,7 +499,12 @@ def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dic
         for index, proxy in enumerate(bucket, 1):
             original = proxy["name"]
             speed = _speed_of(proxy, probes)
+            info = purity_of.get(original) or {}
             new_name = f"{label}-{index:02d}-{speed:.1f}MB/S"
+            # 纯净度只在**真的拿到了**才写进名字。未知时留空 —— 写 `·净?`
+            # 或写 `·净100` 都会让使用者把「没查到」当成「很干净」。
+            if info.get("known") and info.get("score") is not None:
+                new_name += f"·净{info['score']}"
             proxy = dict(proxy)
             proxy["name"] = new_name
             final.append(proxy)
@@ -480,11 +520,13 @@ def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dic
                 "exit_ip": probes.get(original, {}).get("exit_ip"),
                 "country_code": code,
                 "country": label,
+                "purity": info or purity_mod.describe({}),
             })
 
     result.proxies = final
     result.records = records
     result.countries = dict(counters)
+    result.purity = purity_mod.summary(purity_of)
     result.stats.accepted = len(final)
     result.generated_at = datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S %z")
     log(f"  最终 {len(final)} 个节点，覆盖 {len(counters)} 个国家/地区，"
@@ -494,8 +536,14 @@ def _finalize(result: BuildResult, candidates: list[dict], probes: dict[str, dic
 
 def _finish(result: BuildResult, *, started: float, candidates_path: Path,
             speed_path: Path | None, max_nodes: int, country_share: float,
-            top_per_country: int, log=print) -> BuildResult:
-    """`stage="finish"` 的入口：只读两个文件，不碰网络。
+            top_per_country: int, fraud_top: int = 0, log=print) -> BuildResult:
+    """`stage="finish"` 的入口：读两个文件，**不再测任何东西**。
+
+    ⚠️ 「不再测任何东西」不等于「不碰网络」：国家判定要查 ip-api、纯净度要查
+       Scamalytics。之前这里写的是「只读两个文件，不碰网络」，而
+       `_resolve_countries()` 早就在查 ip-api 了 —— 注释在说谎，改掉。
+       共同点是**这两件事都不经过节点**（查的是「这个 IP 是什么」，与视角无关），
+       所以放在收尾段做和放在测速段做结果一样，不必占用测速机。
 
     两个文件都必须存在 —— 缺 `speed.json` 就退回「延迟顺序」出产物，
     那会生成一批名字里写着 0.0MB/S 的节点（使用者无法分辨「坏节点」和「没测到」）。
@@ -534,7 +582,8 @@ def _finish(result: BuildResult, *, started: float, candidates_path: Path,
     return _finalize(
         result, candidates, probes, delays=delays, pre_codes=pre_codes,
         max_nodes=max_nodes, country_share=country_share,
-        top_per_country=top_per_country, started=started, log=log,
+        top_per_country=top_per_country, started=started,
+        fraud_top=fraud_top, log=log,
     )
 
 
@@ -909,17 +958,23 @@ def _server_countries(proxies: list[dict], *, log=print) -> dict[str, str]:
     for proxy in proxies:
         ip = resolved.get(proxy["server"])
         hit = geo.get(ip) if ip else None
-        if hit and hit[0]:
-            out[proxy["name"]] = hit[0]
+        if hit and hit["code"]:
+            out[proxy["name"]] = hit["code"]
     log(f"  服务端 IP 定位成功 {len(out)}/{len(proxies)}")
     return out
 
 
 def _resolve_countries(candidates: list[dict], probes: dict[str, dict],
                        *, base: dict[str, str] | None = None,
-                       log=print) -> dict[str, str]:
-    """国家判定优先级：出口 IP > 服务端 IP > 节点名里的地区标签。"""
+                       log=print) -> tuple[dict[str, str], dict[str, dict]]:
+    """国家判定优先级：出口 IP > 服务端 IP > 节点名里的地区标签。
+
+    第二个返回值是 `{ip: ip-api 记录}`，**白拿的**：同一次 batch 请求里已经带了
+    `proxy/hosting/mobile`，`purity.py` 直接吃这份数据，不必再查一遍
+    （那个接口每分钟只给 45 次，再查一次就是 80 个 IP 吃掉一半配额）。
+    """
     code_of: dict[str, str] = {}
+    geo: dict[str, dict] = {}
 
     # 1. 出口 IP（最准）
     exit_map = {
@@ -931,8 +986,8 @@ def _resolve_countries(candidates: list[dict], probes: dict[str, dict],
         geo = geoip.lookup_batch(list(exit_map.values()), log=log)
         for name, ip in exit_map.items():
             hit = geo.get(ip)
-            if hit and hit[0]:
-                code_of[name] = hit[0]
+            if hit and hit["code"]:
+                code_of[name] = hit["code"]
     log(f"  出口 IP 定位成功 {len(code_of)}")
 
     # 2. 服务端 IP 兜底（复用测速前那次查询，避免重复请求）
@@ -954,7 +1009,7 @@ def _resolve_countries(candidates: list[dict], probes: dict[str, dict],
 
     located = sum(1 for p in candidates if p["name"] in code_of)
     log(f"  最终定位成功 {located}/{len(candidates)}")
-    return code_of
+    return code_of, geo
 
 
 # --------------------------------------------------------------------------- 输出
@@ -967,13 +1022,20 @@ def _header(result: BuildResult) -> str:
         f"# 生成时间：{result.generated_at}",
         f"# 节点数量：{result.stats.accepted}",
         f"# 覆盖地区：{'、'.join(f'{k}×{v}' for k, v in result.countries.items())}",
-        "# 节点名格式：国家-序号-实测平均速度（MB/S）",
+        "# 节点名格式：国家-序号-实测平均速度（MB/S）·净N（出口 IP 纯净度 0~100）",
     ]
     # 速度是「测速机 → 节点」的单点实测值，换一台机器测就是另一个数。
     # 不写清测速机在哪，使用者会把它当成自己那边的速度。
     if result.vantage:
         lines.append(f"# 测速位置：{result.vantage}"
                      "（该速度是这台机器到节点的实测值，不代表你所在网络的速度）")
+    purity = result.purity or {}
+    if purity.get("known"):
+        lines.append(
+            f"# 纯净度：{purity['known']}/{purity['known'] + purity['unknown']} 个有数据，"
+            f"中位 {purity.get('median_score')}；分数越高越像干净的住宅 IP"
+            "（机房/代理/移动网络会扣分，未知时不写这个后缀）"
+        )
     lines += [
         "# 免费节点随时可能失效，仅供学习与技术研究使用",
         "# ============================================================",
@@ -1037,6 +1099,7 @@ def write_outputs(result: BuildResult, out_dir: Path, *, log=print) -> dict[str,
         "generated_at": result.generated_at,
         "stats": result.stats.__dict__,
         "countries": result.countries,
+        "purity": result.purity,
         "sources": result.sources,
         "nodes": result.records,
     }
@@ -1051,6 +1114,16 @@ def write_outputs(result: BuildResult, out_dir: Path, *, log=print) -> dict[str,
     for key, path in paths.items():
         log(f"  写出 {key}: {path} ({path.stat().st_size} B)")
     return paths
+
+
+def _purity_cell(info: dict | None) -> str:
+    """报告表格里的一格：`机房 75（欺诈 0）`。未知就写「未知」而不是 0。"""
+    if not info or not info.get("known"):
+        return "未知"
+    cell = f"{info['kind']} {info['score']}"
+    if info.get("fraud") is not None:
+        cell += f"（欺诈 {info['fraud']}）"
+    return cell
 
 
 def _render_markdown(result: BuildResult) -> str:
@@ -1114,16 +1187,41 @@ def _render_markdown(result: BuildResult) -> str:
         "",
         "## 速度最快的 15 个节点",
         "",
-        "| 名称 | 类型 | 平均速度 | 延迟 | 出口 IP |",
-        "| --- | --- | ---: | ---: | --- |",
+        "| 名称 | 类型 | 平均速度 | 延迟 | 出口 IP | 纯净度 |",
+        "| --- | --- | ---: | ---: | --- | --- |",
     ]
     ranked = sorted(result.records, key=lambda r: -r["speed_mbps"])[:15]
     for record in ranked:
         delay = f"{record['delay']} ms" if record.get("delay") else "—"
         lines.append(
             f"| {record['name']} | {record['type']} | {record['speed_mbps']:.1f} MB/S | "
-            f"{delay} | {record.get('exit_ip') or '—'} |"
+            f"{delay} | {record.get('exit_ip') or '—'} | "
+            f"{_purity_cell(record.get('purity'))} |"
         )
+
+    # 纯净度单列一节。放进节点名的是分数（`·净85`），而「为什么是这个分」
+    # —— 机房还是代理、欺诈分多少 —— 只有报告里能摊开。
+    purity = result.purity or {}
+    if purity.get("known"):
+        lines += [
+            "",
+            "## 出口 IP 纯净度",
+            "",
+            f"- 有数据 **{purity['known']}** 个，未知 {purity['unknown']} 个"
+            f"（未知 = ip-api 没返回这个出口 IP，**不是 0 分**）",
+            f"- 中位分 **{purity.get('median_score')}**"
+            f"，其中拿到第三方欺诈分的 {purity.get('with_fraud', 0)} 个",
+            "- IP 类型分布："
+            + "、".join(f"{k} {v} 个" for k, v in
+                        sorted((purity.get("kinds") or {}).items(),
+                               key=lambda kv: -kv[1])),
+            "",
+            "> 算法：100 分起，被标为代理 −25、机房 IP −20、移动网络 −5；"
+            "拿到 Scamalytics 欺诈分时取 `min(分数, 100 − 欺诈分)`。"
+            "参考 [xykt/IPQuality](https://github.com/xykt/IPQuality) 的判定思路，"
+            "但只取无密钥、单 IP 亚秒级的两路信号 —— 它那套 8 库 + 400 DNSBL 单 IP 要一分钟。",
+            "",
+        ]
 
     lines += ["", "## 源站", ""]
     for source in result.sources:
