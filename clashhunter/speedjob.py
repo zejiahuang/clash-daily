@@ -28,7 +28,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .builder import _reason_counts, _refine_speed
+from .builder import _reason_counts, _refine_speed, _report_refine
 from .mihomo import SPEED_URL, Mihomo, ensure_binary
 
 CST = timezone(timedelta(hours=8))
@@ -116,19 +116,21 @@ def run(in_path: Path, out_path: Path, *, work_dir: Path,
     ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
     log(f"初筛可用 {ok}/{len(candidates)}")
 
+    refine: dict | None = None
     if refine_top > 0:
         # 复测：更大的下载量 + 更低并发。这里**不传 sources** ——
         # 多源要先直连自检挑源，而本模块不量直连（见模块 docstring）。
-        improved = _refine_speed(
+        refine = _refine_speed(
             mh, candidates, probes,
             top=refine_top, workers=refine_workers,
             speed_url=speed_url, speed_bytes=refine_bytes,
             speed_timeout=timeout, ip_timeout=ip_timeout,
             screen_bytes=screen_bytes, sources=None, log=log,
         )
-        if improved is not None:
+        if refine is not None:
             ok = sum(1 for v in probes.values() if v.get("speed", 0) > 0)
-            log(f"复测完成，其中 {improved} 个比初筛更快；总计可用 {ok}")
+            log(f"复测完成，其中 {refine['improved']} 个比初筛更快；总计可用 {ok}")
+            _report_refine(refine, log=log)
 
     out = {
         "run_id": run_id,
@@ -142,6 +144,10 @@ def run(in_path: Path, out_path: Path, *, work_dir: Path,
         "stats": {
             "total": len(candidates),
             "ok": ok,
+            # 复测那一轮的账。CNB 侧读这个字段就能判断「这 80 个速度到底是
+            # 24 MB 量出来的还是 6 MB 量出来的」—— 没有它，复测全灭和复测全成
+            # 在产物里长得一样。
+            "refine": refine,
             "errors": [
                 {"count": count, "reason": reason}
                 for count, reason in _reason_counts(probes)[:5]

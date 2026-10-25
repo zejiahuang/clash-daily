@@ -101,7 +101,7 @@ def test_failed_refine_keeps_old(problems: list[str]) -> None:
     record: list[dict] = []
     mh = FakeMihomo({"fast": 20.0, "flaky": 0.0}, record)
 
-    improved = _refine_speed(
+    stats = _refine_speed(
         mh, nodes, probes,
         top=300, workers=16, speed_url="http://example/x",
         speed_bytes=REFINE_BYTES, speed_timeout=10.0, ip_timeout=6.0,
@@ -114,8 +114,15 @@ def test_failed_refine_keeps_old(problems: list[str]) -> None:
     if probes["flaky"]["speed"] != 5.0:
         problems.append(f"复测返回 0 时把初筛的有效值冲掉了（变成 "
                         f"{probes['flaky']['speed']}）—— 复测失败不能算作「节点变慢了」")
-    if improved != 1:
-        problems.append(f"「比初筛更快」的计数是 {improved}，应为 1")
+    if not stats or stats.get("improved") != 1:
+        problems.append(f"「比初筛更快」的计数是 {stats}，应为 improved=1")
+
+    # 复测的账必须完整：只有 improved 的话，「300 个里 242 个被 429 拒了」
+    # 和「300 个全成功但都不更快」在日志里一模一样。
+    if not stats or stats.get("attempted") != 2 or stats.get("ok") != 1:
+        problems.append(f"复测账目不对（应 attempted=2 / ok=1）：{stats}")
+    if not stats or not isinstance(stats.get("reasons"), list):
+        problems.append(f"复测账目里没有失败原因列表：{stats}")
 
 
 def test_skip_conditions(problems: list[str]) -> None:

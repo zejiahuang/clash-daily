@@ -39,6 +39,11 @@ class Stats:
     # 下载测速的失败原因（次数, 原因），降序。写进 report.json —— CNB 的构建日志
     # 从外部读不到，只有落在仓库里的东西才能拿来事后判断。
     speed_errors: tuple = ()
+    # 复测（低并发 + 大下载量那一轮）的战果：{attempted, ok, improved, reasons}。
+    # 必须落库：复测失败的节点**保留初筛读数**（刻意的），于是「复测 300 个里
+    # 242 个被 429 拒了」在产物里一个字都不会留 —— 使用者看到的 80 个速度其实是
+    # 初筛值，而初筛是 32 并发抢带宽量出来的、还被 0.05 秒地板截断。
+    refine: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -373,18 +378,20 @@ def build(
                 elif speed_sources > 0:
                     log(f"     单源复测：多源取中位数要 ×{speed_sources} 的时间，"
                         f"窄管道上不划算")
-            improved = _refine_speed(
+            refine = _refine_speed(
                 mh, candidates, probes,
                 top=refine_top, workers=refine_workers,
                 speed_url=speed_url, speed_bytes=refine_bytes,
                 speed_timeout=speed_timeout, ip_timeout=ip_timeout,
                 screen_bytes=screen_bytes, sources=sources, log=log,
             )
-            if improved is not None:
+            if refine is not None:
+                result.stats.refine = refine
                 result.stats.speed_ok = sum(
                     1 for v in probes.values() if v.get("speed", 0) > 0)
-                log(f"  复测完成，其中 {improved} 个比初筛更快；"
+                log(f"  复测完成，其中 {refine['improved']} 个比初筛更快；"
                     f"总计可用 {result.stats.speed_ok}")
+                _report_refine(refine, log=log)
         finally:
             mh.stop()
 
@@ -633,7 +640,11 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
                   log=print) -> int | None:
     """对初筛最快的一批用低并发 + 更大的下载量重测，原地更新 probes。
 
-    返回「比初筛更快」的个数；`top<=0` 或没有可复测的项时返回 None。
+    返回 `{attempted, ok, improved, reasons}`；`top<=0` 或没有可复测的项时返回 None。
+
+    ⚠️ 返回的是**整轮的账**而不只是 `improved`。只报 improved 的话，一次
+    「300 个里 242 个失败」的复测和一次「300 个全成功但都不比初筛快」的复测
+    在日志里长得一模一样（都是「其中 0 个更快」），而前者的产物里全是初筛读数。
 
     为什么要单独一轮：初筛并发 32，几十个节点在抢同一条出口带宽，快节点被压低，
     而**写进节点名的就是这个数**。
@@ -686,7 +697,31 @@ def _refine_speed(mh, candidates: list[dict], probes: dict[str, dict], *,
             if item["speed"] > probes.get(name, {}).get("speed", 0):
                 improved += 1
             probes[name] = item
-    return improved
+    ok = sum(1 for v in again.values() if v.get("speed", 0) > 0)
+    return {
+        "attempted": len(again),
+        "ok": ok,
+        "improved": improved,
+        "reasons": [(count, reason) for count, reason in _reason_counts(again)[:3]],
+    }
+
+
+def _report_refine(refine: dict, *, log=print) -> None:
+    """复测可用率不到一半时，把「失败的那些保留的是初筛读数」说清楚。
+
+    这一行是给事后看的：`probe_all` 只在「可用率 < 一半」时打失败原因，而复测
+    失败**不覆盖**初筛值（刻意的，见 `_refine_speed`），于是不在这里说的话，
+    产物里那 80 个速度到底是「24 MB 量出来的」还是「6 MB 抢带宽量出来的」，
+    从任何地方都看不出来。
+    """
+    attempted = int(refine.get("attempted") or 0)
+    ok = int(refine.get("ok") or 0)
+    if not attempted or ok * 2 >= attempted:
+        return
+    log(f"  ⚠️ 复测可用只有 {ok}/{attempted} —— 失败的 {attempted - ok} 个"
+        f"**保留初筛读数**（初筛并发高、读数偏低，且被 0.05 秒地板截断）")
+    for count, reason in refine.get("reasons") or []:
+        log(f"      {count:>4} 个  {reason}")
 
 
 # 一个测速源自己都跑不到这个速度，经它测出来的节点读数就永远到不了这个值
