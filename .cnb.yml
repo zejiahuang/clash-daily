@@ -54,7 +54,13 @@ main:
         image: python:3.11
       # ⚠️ 取消下面注释之前，**必须先在 CNB 建好密钥仓库**（类型选「密钥仓库」）：
       #      https://cnb.cool/new/repos → 类型「密钥仓库」→ 名字 clash-daily-secrets
-      #      网页里建 envs.yml，内容一行：GH_DISPATCH_TOKEN: ghp_xxx
+      #      网页里建 envs.yml，内容（**allow_* 不能省**，默认判据是「触发者是不是
+      #      密钥仓库的成员」，而定时任务的身份是「最后改 crontab 的那个人」，
+      #      他不是密钥仓库成员 ⇒ 必然不过 ⇒ imports 静默注入空值）：
+      #          allow_slugs: "StriveGlory/clash-daily"     # slug，不是 URL
+      #          allow_branches: main
+      #          allow_events: [crontab, push, "web_trigger*"]
+      #          GH_DISPATCH_TOKEN: ghp_xxx
       #    建好之前不要取消注释：imports 解析不到会让**整条流水线起不来**。
       # imports:
       #   - https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml
