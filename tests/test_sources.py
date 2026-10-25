@@ -13,7 +13,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from clashhunter import sources as source_mod  # noqa: E402
 from clashhunter.sources import (  # noqa: E402
@@ -233,6 +234,35 @@ def main() -> int:
             problems.append(f"{sid} 的 raw 地址拼错了：{urls}")
         elif "//" in urls[0].split("://", 1)[1]:
             problems.append(f"{sid} 的 raw 地址出现了双斜杠：{urls[0]}")
+
+    # 9. 自检必须探「流水线真正下载的那个地址」
+    #    以前它从源码里正则抠 `"https://..."`，对 github-raw 抠到的是**目录**，
+    #    而 GitHub raw 对目录回 404 —— 于是自检里那几个源永远 FAIL，
+    #    真正的故障反而淹没在噪声里。判据：每个源恰好一个地址，且 github-raw
+    #    的地址不能以 `/` 结尾（那就是目录）。
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "probe_env_under_test", ROOT / "scripts" / "probe_env.py"
+        )
+        probe_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe_mod)
+        urls = probe_mod.source_urls()
+        if len(urls) != len(SOURCES):
+            problems.append(f"自检地址 {len(urls)} 个，源站 {len(SOURCES)} 个 —— "
+                            f"要么被 limit 截断，要么漏了某个源")
+        for source in SOURCES:
+            if source.kind != "github-raw":
+                continue
+            want = source.url.rstrip("/") + "/" + source.extra[0]
+            if want not in urls:
+                problems.append(f"自检没探 {source.sid} 的真实文件地址 {want}")
+        if any(u.endswith("/") and "raw.githubusercontent" in u for u in urls):
+            problems.append(f"自检还在探 raw 的目录地址（必然 404）："
+                            f"{[u for u in urls if u.endswith('/') and 'raw.githubusercontent' in u]}")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"加载 scripts/probe_env.py 失败：{type(exc).__name__}: {exc}")
 
     if problems:
         print(f"✗ {len(problems)} 处失败")
