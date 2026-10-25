@@ -53,7 +53,7 @@ main:
       docker:
         image: python:3.11
       # ⚠️ 取消下面注释之前，**必须先在 CNB 建好密钥仓库**（类型选「密钥仓库」）：
-      #      https://cnb.cool/new/repos → 类型「密钥仓库」→ 名字 clash-daily-secrets
+      #      https://cnb.cool/new/repos → 类型「密钥仓库」→ 名字 key（本仓库用的是 StriveGlory/key）
       #      网页里建 envs.yml，内容（**allow_* 不能省**，默认判据是「触发者是不是
       #      密钥仓库的成员」，而定时任务的身份是「最后改 crontab 的那个人」，
       #      他不是密钥仓库成员 ⇒ 必然不过 ⇒ imports 静默注入空值）：
@@ -62,8 +62,8 @@ main:
       #          allow_events: [crontab, push, "web_trigger*"]
       #          GH_DISPATCH_TOKEN: ghp_xxx
       #    建好之前不要取消注释：imports 解析不到会让**整条流水线起不来**。
-      # imports:
-      #   - https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml
+      imports:
+        - https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml
       stages: &daily_stages
         - name: 安装依赖
           script: |
@@ -175,9 +175,12 @@ main:
     - name: daily-nodes
       docker:
         image: python:3.11
-      # 和上面那个入口一样：建好密钥仓库后再取消注释（两处都要）。
-      # imports:
-      #   - https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml
+      # 必须和上面那个入口**一致**：这条是每天 02:00 的正式跑。
+      # 少了它，定时那轮会正常发布候选、然后在「叫醒 GitHub 测速」处只打一句
+      # 「⚠️ 没有 GH_DISPATCH_TOKEN」就退回去靠 cron 兜底，接着在「等 GitHub 测速」
+      # 15 分钟后放弃 —— 表现是「每天自动跑都不出产物」，而手动点按钮却好好的。
+      imports:
+        - https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml
       stages: *daily_stages
 
   # ---------- 入口 3：push 只跑自检，不测速 ----------

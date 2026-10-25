@@ -544,6 +544,22 @@ def test_cnb_dispatches_github(problems: list[str]) -> None:
         problems.append(f"阶段顺序不对：发布候选({i_handoff}) → 叫醒({i_dispatch}) → "
                         f"等结果({i_wait})，叫醒必须在等结果之前")
 
+    # 所有用同一份日常阶段的入口都必须带 imports:。
+    # 2026-10-25 现场：手动入口解开了 imports、定时入口没解开。手动点按钮一切正常，
+    # 而每天 02:00 那轮会在「叫醒」处只打一句「没有 GH_DISPATCH_TOKEN」就退回 cron 兜底，
+    # 然后在「等 GitHub 测速」15 分钟后放弃 —— 表现是「自动跑从来不出产物」。
+    # 两个入口共用 `stages: &daily_stages`，所以判据是「阶段对象是同一个」而不是入口名。
+    for entry, jobs in (cfg.get("main") or {}).items():
+        if not isinstance(jobs, list):
+            continue
+        for job in jobs:
+            if not isinstance(job, dict) or job.get("stages") is not stages:
+                continue
+            if not job.get("imports"):
+                problems.append(
+                    f"入口「{entry}」用的是同一份日常阶段，但没有 imports: —— "
+                    f"那一轮会拿不到令牌，表现是「这个入口从来不出产物」")
+
     # 没有令牌时要能降级，不能把整条流水线搞红（刚建好仓库时还没配密钥仓库）。
     # 判据取的是那个 if 分支的**函数体**，不是「GH_DISPATCH_TOKEN 之后 400 字」——
     # 后者会命中文件头的注释（那里先提到这个名字），于是断言看起来红、脚本其实是对的。
