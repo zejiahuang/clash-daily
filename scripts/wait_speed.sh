@@ -9,15 +9,17 @@
 #
 # 所以方向反过来：**GitHub 自己来取**。
 #   1. CNB 先把 dist/candidates.json 提交上去（公开可读）；
-#   2. GitHub 的 speedtest 工作流**常驻看守**（一个 job 活 5.5 小时），每 30 秒看
-#      一眼这个文件，发现新的 run_id 就测速，把 dist/speed.json 提交回它自己的 main；
+#   2. CNB 用令牌 POST `workflow_dispatch` 把它叫醒（scripts/gh_dispatch.sh），
+#      GitHub 那边只跑一轮，把 dist/speed.json 提交回它自己的 main；
 #   3. 本脚本在这里轮询 GitHub 的 raw，等到 run_id 对得上就收工。
 #
 # ⚠️ **「GitHub 按 cron 每 10 分钟跑一次」这个前提是错的。** 2026-10-25 实测：公开
 #    仓库的 `schedule` 每 **117~148 分钟**才触发一次（6 次运行全量对照）。于是
 #    「最多等一个 cron 周期」等的东西根本不存在 —— 那天这里老老实实等了 40 分钟，
-#    打了 119 行「还是上一轮的」，而 GitHub 一次都没被叫醒。现在 GitHub 侧改成常驻
-#    看守，触发延迟是「最长 30 秒」；本脚本剩下的职责是**等结果**，不是等触发。
+#    打了 119 行「还是上一轮的」，而 GitHub 一次都没被叫醒。
+#    中间试过「常驻 5.5 小时的看守」：能work，但在 Actions 页面上就是一行
+#    `in_progress` 挂着，看起来像卡死，被误取消过一次。现在 CNB 手里有令牌，
+#    直接 dispatch，触发延迟是「秒级」；本脚本的职责是**等结果**，不是等触发。
 #
 # ⚠️ 轮询**必须比对 run_id**，不能只看文件存在：speed.json 是提交进仓库的文件，
 #    上一轮那份会一直在。只判存在的话，GitHub 没跑起来时这里会安静地拿到旧结果。
@@ -26,12 +28,13 @@
 #    在跑 —— 这个可以匿名读公开仓库的 API，不需要令牌。有了它，「没人叫它」和
 #    「叫了但跳过了」才分得开；没有它，日志就只是一百多行一模一样的话。
 #
-# ⚠️ **「没有看守在跑」要当成故障，不能当成「再等等」**。cron 实测 117~148 分钟才
-#    触发一次，所以没人在跑的时候，等下去基本等于等两小时。2026-10-25 就撞上过：
-#    看守那个 job 在 Actions 页面上是一行 `in_progress`、看起来像卡住，被取消之后
+# ⚠️ **「GitHub 那边没有在跑」要当成故障，不能当成「再等等」**。上一步刚刚用令牌
+#    dispatch 过，正常情况下几秒内就该有一个 run 在排队；看不到它，说明叫醒失败了
+#    （令牌没配、失效、或者 CNB 到 api.github.com 不通）。2026-10-25 就撞上过：
+#    那个 job 在 Actions 页面上是一行 `in_progress`、看起来像卡住，被取消之后
 #    CNB 这边什么都不知道，还在按 60 分钟上限安静地轮询。现在的规则是：连续
-#    WAIT_IDLE_GRACE（默认 15 分钟）没有看守在跑就放弃，并把「点哪里能立刻接上」
-#    打出来 —— 与此同时每一行都提醒一次，操作的人不用等失败也能救。
+#    WAIT_IDLE_GRACE（默认 15 分钟）没有 run 在跑就放弃，并把「怎么救」打出来 ——
+#    与此同时每一行都提醒一次，操作的人不用等失败也能处理。
 set -euo pipefail
 
 CANDIDATES="${1:-dist/candidates.json}"
@@ -75,15 +78,15 @@ if [ -z "$RUN_ID" ]; then
   exit 1
 fi
 echo "等 GitHub 测速：run_id=$RUN_ID"
-echo "  GitHub 侧是常驻看守（每 30 秒看一眼 CNB），正常情况下 30 秒内就开始测"
-echo "  最多等 ${TIMEOUT_MIN} 分钟；如果 $(dur_fmt "$IDLE_GRACE") 内一直没人在看守，会提前放弃并说明原因"
+echo "  CNB 上一步已经用令牌叫醒它，正常情况下 30 秒内开始测、3 分钟内出结果"
+echo "  最多等 ${TIMEOUT_MIN} 分钟；如果 $(dur_fmt "$IDLE_GRACE") 内一直没有 run 在跑，会提前放弃并说明原因"
 
 TMP_GH="$(mktemp)"
 trap 'rm -f "$TMP_GH"' EXIT
 
 # 打印一行「GitHub 那边现在什么状态」。退出码：
-#   0 = 有看守在跑（排队也算）
-#   1 = 没有在看守（不管上一次是什么时候、什么结论）
+#   0 = 有 run 在跑（排队也算）
+#   1 = 一个在跑的都没有（不管上一次是什么时候、什么结论）
 #   2 = 查不到（限流 / 不可达，不能据此判断任何事）
 gh_probe() {
   local body
@@ -119,7 +122,7 @@ busy = [r for r in runs if r.get("status") in ("in_progress", "queued")]
 if busy:
     run = busy[0]
     started = parse(run["created_at"])
-    print(f"GitHub：看守在跑（{run['status']}，{started.astimezone(CST):%H:%M} 开始，"
+    print(f"GitHub：有 run 在跑（{run['status']}，{started.astimezone(CST):%H:%M} 开始，"
           f"已 {(now - started).total_seconds() / 60:.0f} 分钟）")
     raise SystemExit(0)
 
@@ -152,23 +155,23 @@ while :; do
     STATE="$(gh_probe)" || RC=$?
     echo "  [$(elapsed_fmt "$ELAPSED")] $STATE"
     if [ "$RC" -eq 0 ]; then
-      # 有看守 ⇒ 重新计时（中途被人点起来也要能把宽限清零）
+      # 有 run 在跑 ⇒ 重新计时（中途被人点起来也要能把宽限清零）
       IDLE_SINCE=0
     elif [ "$RC" -eq 1 ]; then
       if [ "$IDLE_SINCE" -eq 0 ]; then
         IDLE_SINCE=$NOW
       fi
       # 每一行都带上「怎么救」：操作的人不用等失败就能处理
-      echo "         ⇒ 打开 https://github.com/${REPO}/actions/workflows/speedtest.yml"
-      echo "           点 Run workflow，30 秒内就会接上（这边会继续等）"
+      echo "         ⇒ 上一步「叫醒 GitHub 测速」没成功（多半是令牌没配 / 失效）—— 看那一步的日志"
+      echo "           手动救急：https://github.com/${REPO}/actions/workflows/speedtest.yml 点 Run workflow"
       if [ $((NOW - IDLE_SINCE)) -ge "$IDLE_GRACE" ]; then
         {
-          echo "GitHub 那边已经 $(dur_fmt $(( NOW - IDLE_SINCE )))没有看守在跑了 —— 再等下去也不会有人来测"
-          echo "（cron 实测 117~148 分钟才触发一次，靠它自己回来要等两小时）"
-          echo "处理办法（都不需要令牌）："
-          echo "  1) 打开 https://github.com/${REPO}/actions/workflows/speedtest.yml"
-          echo "     点 Run workflow；看守起来后这里 30 秒内就会接上"
-          echo "  2) 或者重跑 CNB 这一轮，等下一次看守起来"
+          echo "GitHub 那边已经 $(dur_fmt $(( NOW - IDLE_SINCE )))没有 run 在跑 —— 再等下去也不会有人来测"
+          echo "（兜底的 cron 实测 117~148 分钟才触发一次，靠它自己回来要等两小时）"
+          echo "处理办法："
+          echo "  1) 先看「叫醒 GitHub 测速」那一步的日志 —— 令牌没配 / 失效是这里最常见的成因"
+          echo "  2) 手动救急：打开 https://github.com/${REPO}/actions/workflows/speedtest.yml 点 Run workflow"
+          echo "  3) 或者重跑 CNB 这一轮"
         } >&2
         exit 1
       fi

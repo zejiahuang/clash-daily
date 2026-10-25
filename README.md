@@ -5,8 +5,8 @@
 
 ```
 CNB（中国大陆）    采集 → 去重 → TCP 预筛 → 延迟测速（HTTPS 探测）→ candidates.json
-        ↓ 提交到本仓库 main（公开可读，不需要任何令牌）
-GitHub runner      自己按 cron 来取，经每个节点下载 Cloudflare 测速文件 → speed.json
+        ↓ 提交到本仓库 main（公开可读），然后用令牌 dispatch 叫醒 GitHub（秒级）
+GitHub runner      拉下 candidates.json，经每个节点下载 Cloudflare 测速文件 → speed.json
         ↓ 提交回 GitHub 自己的 main
 CNB（中国大陆）    轮询 raw 取回（run_id 对得上才算）→ 出口地区识别 → 纯净度
                    → 同出口去重 → 取 80 → 产出 → 提交回 CNB
@@ -103,38 +103,55 @@ git push -u cnb main
 GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）和
 `.github/workflows/speedtest.yml`（测速工作流）。仓库是 public，Actions 不计费。
 
-### 2. 不需要任何令牌（这一点是被逼出来的，不是偏好）
+### 2. 需要一个令牌 —— 但令牌不落仓库
 
-**CNB 仓库设置里没有「环境变量 / 密钥」这个入口**，所以「CNB 拿一个 GitHub PAT 推过去」
-这条路根本走不通。而且就算能填也不该填：这个仓库是**公开**的，写一个 PAT 进去等于把
-仓库写权限发给所有人；更实际的问题是 GitHub 的密钥扫描会把公开仓库里出现的 `ghp_`
-令牌**自动吊销** —— 那不是「不安全但能用」，是「过几小时就坏」。
+要 CNB 主动叫醒 GitHub，就必须有一个能对这个仓库 `workflow_dispatch` 的 GitHub 令牌。
+**令牌不能写进本仓库**：仓库是公开的，写进去等于把写权限发给所有人；更实际的问题是
+GitHub 的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销** —— 那不是
+「不安全但能用」，是「过几小时就坏」。
 
-所以方向反过来：**GitHub 自己来取**。
+所以令牌放在 CNB 的**密钥仓库**里（见 `docs.cnb.cool/zh/repo/secret.html`）：
+
+1. <https://cnb.cool/new/repos> 建一个仓库，**仓库类型选「密钥仓库」**（本文按
+   `clash-daily-secrets` 写）。它不是普通私有仓库：**禁止 clone、禁止本地 push、
+   只能网页编辑** —— 这正是它存在的理由。
+2. 在它的网页里建 `envs.yml`，一行：`GH_DISPATCH_TOKEN: ghp_xxx`
+3. 把 `.cnb.yml` 里 `imports:` 那几行的注释去掉，指向这个文件的 raw 地址。
+
+> ⚠️ 密钥仓库默认**只允许它的管理员/负责人触发的流水线**引用它。CNB 里跑的定时任务
+> 没有「人」这个作者，所以要放宽：`allow_slugs`（哪个仓库能用）、`allow_branches`、
+> `allow_events`。没放宽的表现是 `imports:` **静默注入空值** —— 也就是「令牌明明配了
+> 却没生效」，脚本会走「没有令牌」的分支，日志里只有一句警告。
+>
+> ⚠️ `env:` 和 `imports:` 撞键时 **`env` 优先**。别在 `env:` 里写同名占位，否则配了也不生效。
+
+没配令牌时 `scripts/gh_dispatch.sh` **只警告、不失败**（`exit 0`），退回 GitHub 自己的
+cron 兜底 —— 慢，但流水线不会红。这是刻意的：刚建好仓库时最容易踩到的就是这一步，
+让它红等于把「还没配密钥」误报成「流水线坏了」。
 
 | 谁 | 怎么拿到对方的文件 | 用什么凭据 |
 |---|---|---|
 | GitHub → CNB | `curl` CNB 的公开 raw（`/-/git/raw/main/dist/...`） | 不需要 |
-| CNB → GitHub | `curl` `raw.githubusercontent.com` 的公开 raw | 不需要 |
+| CNB → GitHub（读结果） | `curl` `raw.githubusercontent.com` 的公开 raw | 不需要 |
+| CNB → GitHub（**叫醒**） | `POST .../actions/workflows/speedtest.yml/dispatches` | 密钥仓库的 `GH_DISPATCH_TOKEN` |
 | 各自写自己的仓库 | `git push` 自己 | 平台自带的凭据 |
 
-代价是**触发只能靠 GitHub 自己**：CNB 这边没有任何东西能"叫醒"它，所以 GitHub 侧的
-工作流不是「cron 起来看一眼就退出」，而是**常驻看守** —— 一个 job 活 5.5 小时，每
-30 秒看一眼 CNB 上的 `candidates.json`，看到新的 `run_id` 就测速、交付，然后回到轮询。
-换来的是一轮从「点了按钮」到「开始测速」只差 **30 秒以内**，而全流程零密钥。
+一轮从「点了按钮」到「GitHub 开始测速」只差 **10 秒左右**。
 
-> ⚠️ **`schedule` 不是定时器。** 2026-10-25 实测（公开仓库，cron 写的是 `*/10`）：
-> 6 次运行的间隔是 **117 / 126 / 148 / 136 分钟**。那天 CNB 发布候选后等了 40 分钟，
-> GitHub 一次都没被叫醒 —— 日志里只有 119 行「speed.json 还是上一轮的」，看不出
-> 是「没人叫它」还是「叫了但跳过了」。所以「每 10 分钟跑一次」这个形状被换掉了：
-> cron 现在只剩一个作用 —— **保证看守一直有人活着**（看守 5.5 小时，实测 cron 间隔
-> 2~2.5 小时，覆盖得上；公开仓库的 Actions 不计费）。
+> ⚠️ **`schedule` 不是定时器，所以它只能是兜底。** 2026-10-25 实测（公开仓库，cron 写的
+> 是 `*/10`）：6 次运行的间隔是 **117 / 126 / 148 / 136 分钟**。那天 CNB 发布候选后等了
+> 40 分钟，GitHub 一次都没被叫醒 —— 日志里只有 119 行「speed.json 还是上一轮的」，
+> 看不出是「没人叫它」还是「叫了但跳过了」。现在 `speedtest.yml` 的 cron 写成 `*/30`，
+> **只在 dispatch 没成功时才有机会跑**。
 >
-> ⚠️ **看守长时间 `in_progress` 是它正常的样子，别在 Actions 页面上手动取消它。**
-> 2026-10-25 撞过一次：那个 job 十几分钟什么都没输出，看着像卡住，被取消之后 CNB
-> 立刻变成「没人在看守」，而下一个 cron 要两小时后才来 —— 那一轮只能干等到失败。
-> 现在等待脚本会把这件事说出来：**连续 15 分钟没有看守在跑就提前放弃**，并把
-> 「点哪里能立刻接上」打进日志（每行都带，不用等失败就能救）。
+> ⚠️ 在此之前用过两种「零密钥」的形状，**都不要再回去**：
+>
+> 1. **「cron 每 10 分钟看一眼」** —— 就是上面那 40 分钟，等于不看。
+> 2. **「一个 job 常驻 5.5 小时轮询」** —— 能 work，但在 Actions 页面上就是一行
+>    `in_progress` 挂着，看起来像卡死。2026-10-25 被误取消过一次（run `40155272778`，
+>    10:39:20 起、10:54:39 `cancelled`，只活了 15 分 19 秒），CNB 那边立刻变成
+>    「没人在守」，而下一个 cron 要两小时后才来。它还有个隐性代价：每轮都要重装一遍
+>    环境，`timeout-minutes: 350` 又意味着一个卡住的 job 能占住 6 小时。
 >
 > ⚠️ 实测（2026-10-24，CNB 的 `dist/probe.json`）：CNB → `raw.githubusercontent.com`
 > 是 **200 / 204 ms**，所以 `wait_speed.sh` 的轮询不需要任何镜像。
@@ -150,7 +167,7 @@ GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）�
 
 | 入口 | 触发方式 | 跑什么 | 耗时 |
 |---|---|---|---|
-| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~50 分钟（含等 GitHub 看守接上的 ≤1 分钟） |
+| `crontab: 0 2 * * *` | 每天**北京时间 02:00** 自动 | 全流程 | 20~50 分钟（含 dispatch 后等 GitHub 起容器的 1~2 分钟） |
 | `web_trigger_daily` | 分支详情页的「立即跑一轮」按钮 | 全流程，参数可填 | 同上 |
 | `push` | 每次推代码 | **只跑环境自检**，不测速 | 约 1 分钟 |
 
@@ -166,16 +183,18 @@ GitHub 那边只需要两样东西：一个 `main` 分支（放产物副本）�
 |---|---|---|
 | 1 | CNB | `main.py --stage delay` → `dist/candidates.json`（含 `run_id` 和测速参数） |
 | 2 | CNB | `scripts/ci_commit.sh` 把候选提交到**本仓库 main**（公开可读） |
-| 3 | GitHub | `speedtest.yml` 是**常驻看守**（一个 job 活 5.5 小时），每 30 秒读一次这个文件，`run_id` 是新的就开始测速 |
-| 4 | GitHub | `main.py --stage speed` → `dist/speed.json`，提交回 GitHub 自己的 main |
-| 5 | CNB | `scripts/wait_speed.sh` 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配（等不到时会去读 GitHub Actions 的公开状态，说清是「没人叫它」还是「叫了但跳过了」） |
+| 3 | CNB | `scripts/gh_dispatch.sh` 用令牌 POST `workflow_dispatch` 叫醒 GitHub |
+| 4 | GitHub | 拉下那份 `candidates.json`（`--in /tmp/candidates.json`，就是 gate 判过的那份），`run_id` 是新的就开始测速 → `dist/speed.json`，提交回 GitHub 自己的 main |
+| 5 | CNB | `scripts/wait_speed.sh` 轮询 `raw.githubusercontent.com` 直到 `run_id` 匹配（等不到时会去读 GitHub Actions 的公开状态，说清是「没有 run 在跑」还是「有 run 但没读到候选」） |
 | 6 | CNB | `main.py --stage finish` → 国家判定、去重、重命名、出订阅，提交回 CNB |
 | 7 | GitHub | 等 CNB 的 `report.json` 的 `run_id` 对上，把 5 个产物文件复制回 GitHub |
 
-为什么是「GitHub 自己来取」而不是「CNB 推过来触发」：见上面 §三.2 —— 没有令牌可用。
-`git push` 到 GitHub 需要写权限，而任何能写权限的东西放进公开仓库都会被吊销。
-**注意「自己来取」不等于「靠 cron 定时」**：`schedule` 在公开仓库上实测 2 小时才触发一次，
-所以那边是常驻看守，cron 只负责保证看守一直有人活着。
+为什么叫醒走令牌、令牌又必须放在密钥仓库：见上面 §三.2。
+
+> ⚠️ **测速必须读 `/tmp/candidates.json`，不能读 clone 里那份**。clone 里的是
+> `main` 上的活文件，随时会被下一轮改写 —— 于是 `speed.json` 的 `run_id` 是 Y，
+> 而 CNB 在等 X：两边都「成功」，CNB 一路等到超时。所以 gate 把文件落到 `/tmp`，
+> 测速只认这一份，跑完还要校验 `run_id` 没变。
 
 > ⚠️ **轮询必须比对 `run_id`，不能只看文件存在**。`speed.json` 是提交进仓库的文件，
 > 上一轮那份会一直在。只判存在的话，某轮 GitHub 没跑起来时会安静地读进**上一轮的速度**，

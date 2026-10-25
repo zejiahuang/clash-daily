@@ -10,10 +10,15 @@
      产物看着完全正常。必须比对 `run_id`。
   C. **整条链路不能有任何密钥** —— 这个仓库是公开的：写一个 GitHub PAT 进去
      等于把写权限发给所有人，而且 GitHub 的密钥扫描会把公开仓库里出现的
-     `ghp_` 令牌**自动吊销**。所以方向是「GitHub 自己来取」，CNB 只读公开 raw。
+     `ghp_` 令牌**自动吊销**（不是「不安全但能用」，是「过几小时就坏」）。
+     所以令牌只进 CNB 的「密钥仓库」、由 `imports:` 注入成环境变量；
+     脚本里只许出现变量名，`.cnb.yml` 里只许出现 `imports:`。
   D. **「发布候选」那一步必须能穿过防自触发守卫** —— 它紧跟在上一轮的产物提交
      之后，按守卫的判据会被当成产物提交跳过，于是候选永远发不出去、整轮卡死。
      同时它的作者**不能**是 cnb-bot，否则最后那次真正的产物提交会被守卫拦住。
+  E. **叫醒 GitHub 这一步失败要有可读的原因** —— `workflow_dispatch` 的 204/401/
+     403/404/422/000 各对应一件完全不同的事（成功／令牌吊销／没权限／找不到／
+     ref 不存在／网络）。把六种都当成「触发失败」，现场就只剩一句废话。
 
 ⚠️ 等待脚本那两条会真的起一个本地 HTTP 服务，守卫那条会真的建仓库并 push
    （目标都是临时目录里的本地裸仓库），不联网。缺 git / bash / curl 时直接跳过。
@@ -43,6 +48,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 WAIT = ROOT / "scripts" / "wait_speed.sh"
 CI_COMMIT = ROOT / "scripts" / "ci_commit.sh"
+DISPATCH = ROOT / "scripts" / "gh_dispatch.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "speedtest.yml"
 
 CANDIDATES = [
@@ -309,7 +315,7 @@ def test_no_credentials_anywhere(problems: list[str]) -> None:
                         f"这样「零命中」不能证明任何事")
         return
 
-    for path in (WAIT, CI_COMMIT):
+    for path in (WAIT, CI_COMMIT, DISPATCH):
         text = _strip_shell_comments(path.read_text(encoding="utf-8"))
         for label in _scan_credentials(text):
             problems.append(f"{path.name} 里{label} —— 仓库是公开的，写进去等于"
@@ -440,35 +446,32 @@ def test_wait_speed_rejects_other_round(problems: list[str]) -> None:
 
 
 def test_workflow_shape(problems: list[str]) -> None:
-    """D3. 工作流的形状：**常驻看守** + 从 CNB 取代码 + 用 run_id 挡掉重复测速。
+    """D3. 工作流的形状：**只跑一轮、跑完就退出**，由 CNB 用令牌叫醒。
 
-    ⚠️ 这里盯的是 2026-10-25 那次事故：公开仓库的 `schedule` 实测每 **117~148 分钟**
-    才触发一次（6 次运行全量对照），而 CNB 那边假设「最多 10 分钟就会跑」。结果是一轮
-    卡了 40 分钟、GitHub 一次都没被叫醒，日志里只有一百多行「还是上一轮的」。
-    所以「cron 起来看一眼就退出」这个形状本身是错的 —— 下面两条断言盯着它别回来。
+    ⚠️ 这里盯的是 2026-10-25 那两次事故：
+    1. 「cron 每 10 分钟看一眼」—— 公开仓库的 `schedule` 实测每 **117~148 分钟**才
+       触发一次，于是 CNB 干等了 40 分钟，GitHub 一次都没被叫醒；
+    2. 「一个 job 常驻 5.5 小时轮询」—— 能work，但在 Actions 页面上就是一行
+       `in_progress` 挂着，看起来像卡死，被误取消过一次（run 40155272778，15m19s）。
+    现在的形状是「CNB 用令牌 dispatch，job 只跑一轮」。下面几条盯着它别退回去。
     """
     import yaml
 
     cfg = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     on = cfg.get(True) or cfg.get("on") or {}
-    if "schedule" not in on:
-        problems.append("speedtest.yml 没有 schedule —— 看守需要 cron 定期把新的叫起来")
+    if "workflow_dispatch" not in on:
+        problems.append("speedtest.yml 没有 workflow_dispatch —— CNB 用令牌调的就是它")
     job = cfg["jobs"]["speed"]
     scripts = "\n".join(s.get("run", "") for s in job["steps"])
-    env = {**(cfg.get("env") or {}), **(job.get("env") or {})}
 
-    watch = int(env.get("WATCH_MINUTES") or 0)
     limit = int(job.get("timeout-minutes") or 0)
-    if watch < 300:
-        problems.append(f"看守窗口只有 {watch} 分钟 —— 公开仓库的 cron 实测 117~148 "
-                        f"分钟才触发一次，窗口比这短就会出现「看守走了、下一个还没来」"
-                        f"的空档，那段时间 CNB 又在白等")
-    if limit < watch:
-        problems.append(f"timeout-minutes={limit} 小于看守窗口 {watch} —— "
-                        f"窗口还没走完 job 就被杀了")
-    if "while " not in scripts or "POLL_SECONDS" not in scripts:
-        problems.append("工作流里没有轮询循环 —— 一个 job 只测一轮就退出，"
-                        "触发又回到「靠 cron 叫醒」，那正是 40 分钟卡死的成因")
+    if limit <= 0 or limit > 60:
+        problems.append(f"timeout-minutes={limit} —— 这个 job 只跑一轮（测速约 3 分钟 + "
+                        f"等收尾最多 15 分钟），不该超过 1 小时；曾经有过 5.5 小时的看守，"
+                        f"在 Actions 页面上看起来像卡死，被误取消过一次")
+    if "while " in scripts or "WATCH_MINUTES" in scripts:
+        problems.append("工作流又变回「常驻轮询」了 —— 那个形状看起来像卡死，"
+                        "而且现在 CNB 有令牌，直接 dispatch 就够，不需要它")
 
     if "cnb.cool" not in scripts or "git clone" not in scripts:
         problems.append("工作流没有从 CNB 取代码 —— 它会跑本仓库里那份可能落后的副本")
@@ -483,21 +486,73 @@ def test_workflow_shape(problems: list[str]) -> None:
         problems.append("测速没用 gate 判过的那份候选（--in /tmp/candidates.json）—— "
                         "clone 里的 candidates.json 可能已经是下一轮，"
                         "speed.json 的 run_id 就永远对不上")
-    if '"$got" != "$run_id"' not in scripts:
+    if "run_id 不一致" not in scripts:
         problems.append("测速结果没有校验 run_id —— 提交上去 CNB 也认不出来，只会静默等到超时")
     # ⚠️ 两种失败必须分开：`404` = 还没跑过一整轮（跳过，保持绿）；
     #    「取不到」= cnb.cool 从 GitHub 不可达（必须红，否则永远安静地跳过）。
-    #    合在一起写就是一天上百次红灯，或者永远绿的假象 —— 两种都比报错难查。
     if '= "404"' not in scripts:
         problems.append("gate 没把 404 当成「还没有新的一轮」—— 还没跑过一整轮时 "
-                        "看守会一直报错，真出问题反而看不见")
+                        "兜底的 cron 会一直报错，真出问题反而看不见")
     if '!= "200"' not in scripts:
         problems.append("gate 没把「取不到」和「没有新的一轮」分开 —— cnb.cool 从 "
                         "GitHub 不可达时它会永远安静地跳过，一直是绿的")
+    gated = [s for s in job["steps"]
+             if s.get("if") and "skip" in str(s.get("if"))]
+    if len(gated) < 3:
+        problems.append(f"只有 {len(gated)} 个步骤按 skip 短路 —— 空跑时不该装依赖、"
+                        f"不该测速、不该提交")
+
+
+def test_cnb_dispatches_github(problems: list[str]) -> None:
+    """D6. 触发是 **CNB 主动 dispatch**，而且令牌不许落在仓库里。
+
+    令牌来自 CNB 的「密钥仓库」（`imports:` 注入成环境变量）。这个仓库是公开的，
+    一旦 `ghp_` 字面量进了仓库，GitHub 的密钥扫描会把它**自动吊销** ——
+    那不是「不安全但能用」，是「过几小时就坏」。所以下面两条缺一不可：
+    脚本里只许出现环境变量名，`.cnb.yml` 里只许出现 `imports:`。
+    """
+    import yaml
+
+    src = DISPATCH.read_text(encoding="utf-8")
+    if "GH_DISPATCH_TOKEN" not in src:
+        problems.append("gh_dispatch.sh 没有用 GH_DISPATCH_TOKEN —— 令牌从哪来？")
+    if "dispatches" not in src:
+        problems.append("gh_dispatch.sh 没有调 workflow_dispatch 接口")
+    for label in _scan_credentials(src):
+        problems.append(f"gh_dispatch.sh 里{label} —— 令牌必须留在 CNB 的密钥仓库里")
+
+    cfg = yaml.safe_load((ROOT / ".cnb.yml").read_text(encoding="utf-8"))
+    stages = cfg["main"]["web_trigger_daily"][0]["stages"]
+    names = [s.get("name", "") for s in stages]
+    joined = "\n".join(s.get("script", "") for s in stages)
+    if "scripts/gh_dispatch.sh" not in joined:
+        problems.append("CNB 流水线里没有调 gh_dispatch.sh —— 那就又回到「靠 cron 叫醒」了")
+    try:
+        i_dispatch = next(i for i, n in enumerate(names) if "叫醒" in n)
+        i_wait = next(i for i, n in enumerate(names) if "等 GitHub" in n)
+        i_handoff = next(i for i, n in enumerate(names) if "发布候选" in n)
+    except StopIteration:
+        problems.append(f"CNB 阶段名对不上：{names}")
+        return
+    if not (i_handoff < i_dispatch < i_wait):
+        problems.append(f"阶段顺序不对：发布候选({i_handoff}) → 叫醒({i_dispatch}) → "
+                        f"等结果({i_wait})，叫醒必须在等结果之前")
+
+    # 没有令牌时要能降级，不能把整条流水线搞红（刚建好仓库时还没配密钥仓库）。
+    # 判据取的是那个 if 分支的**函数体**，不是「GH_DISPATCH_TOKEN 之后 400 字」——
+    # 后者会命中文件头的注释（那里先提到这个名字），于是断言看起来红、脚本其实是对的。
+    guard = re.search(
+        r'if \[ -z "\$\{GH_DISPATCH_TOKEN:-\}" \]; then\n(.*?)\nfi\n', src, re.S)
+    if guard is None:
+        problems.append("gh_dispatch.sh 里找不到「令牌为空就退出」的分支 —— "
+                        "密钥仓库还没配好时整条流水线会红，而这正是最容易踩到的时刻")
+    elif "exit 0" not in guard.group(1):
+        problems.append("gh_dispatch.sh 的「没有令牌」分支里没有 exit 0 —— "
+                        "那会一路走到末尾的 exit 1，把整条流水线搞红")
 
 
 def test_wait_speed_gives_up_when_nobody_is_watching(problems: list[str]) -> None:
-    """D4. 没有看守在跑 ⇒ 15 分钟宽限后就放弃，不能干等到 60 分钟上限。
+    """D4. 没有任何 run 在跑 ⇒ 15 分钟宽限后就放弃，不能干等到 60 分钟上限。
 
     这是 2026-10-25 现场那一行的复刻：
 
@@ -518,12 +573,12 @@ def test_wait_speed_gives_up_when_nobody_is_watching(problems: list[str]) -> Non
         )
         spent = time.time() - began
         if got.returncode == 0:
-            problems.append("没有看守在跑，等待脚本却当成功退出了")
+            problems.append("没有 run 在跑，等待脚本却当成功退出了")
         if spent > 20:
-            problems.append(f"没有看守在跑，却还是干等了 {spent:.0f} 秒才放弃 —— "
+            problems.append(f"没有 run 在跑，却还是干等了 {spent:.0f} 秒才放弃 —— "
                             f"宽限是 2 秒、上限 60 秒，说明这条路没生效")
-        if "没有看守在跑" not in got.stderr:
-            problems.append(f"放弃时没说清原因（stderr 里没有「没有看守在跑」）："
+        if "没有 run 在跑" not in got.stderr:
+            problems.append(f"放弃时没说清原因（stderr 里没有「没有 run 在跑」）："
                             f"{got.stderr[-300:]}")
         if "Run workflow" not in got.stdout:
             problems.append(f"日志里没有「点哪里能立刻接上」—— 操作的人只能干看着："
@@ -531,7 +586,7 @@ def test_wait_speed_gives_up_when_nobody_is_watching(problems: list[str]) -> Non
 
 
 def test_wait_speed_keeps_waiting_while_github_is_alive(problems: list[str]) -> None:
-    """D5. **对照样本**：看守正在跑时，同一条路不能提前放弃。
+    """D5. **对照样本**：有 run 在跑时，同一条路不能提前放弃。
 
     没有这一条，D4 的「提前放弃」和「脚本一启动就报错」在测试里长得一模一样。
     """
@@ -543,14 +598,14 @@ def test_wait_speed_keeps_waiting_while_github_is_alive(problems: list[str]) -> 
             gh_runs=[{"status": "in_progress", "conclusion": None,
                       "created_at": _iso(5)}],
         )
-        if "没有看守在跑" in got.stderr:
-            problems.append("看守明明在跑（in_progress），等待脚本却判定它没在跑 —— "
+        if "没有 run 在跑" in got.stderr:
+            problems.append("run 明明在跑（in_progress），等待脚本却判定它没在跑 —— "
                             "这会让正常的轮次提前失败")
         if got.returncode == 0:
             problems.append("拿到的是上一轮的结果却当成功退出了")
         if "等了" not in got.stderr:
             problems.append(f"超时那条路没走（stderr 里没有「等了」）：{got.stderr[-300:]}")
-        if "看守在跑" not in got.stdout:
+        if "有 run 在跑" not in got.stdout:
             problems.append(f"没有把「GitHub 在跑」打进日志，人还是看不出卡在哪："
                             f"{got.stdout[-300:]}")
 
@@ -689,6 +744,7 @@ def main() -> int:
     else:
         print("· 跳过脚本测试：本机缺 git / bash / curl")
     test_workflow_shape(problems)
+    test_cnb_dispatches_github(problems)
     test_cnb_stage_order(problems)
 
     if problems:
