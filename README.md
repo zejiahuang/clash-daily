@@ -115,15 +115,39 @@ GitHub 的密钥扫描会把公开仓库里出现的 `ghp_` 令牌**自动吊销
 1. <https://cnb.cool/new/repos> 建一个仓库，**仓库类型选「密钥仓库」**（本文按
    `clash-daily-secrets` 写）。它不是普通私有仓库：**禁止 clone、禁止本地 push、
    只能网页编辑** —— 这正是它存在的理由。
-2. 在它的网页里建 `envs.yml`，一行：`GH_DISPATCH_TOKEN: ghp_xxx`
-3. 把 `.cnb.yml` 里 `imports:` 那几行的注释去掉，指向这个文件的 raw 地址。
+2. 在它的网页里建 `envs.yml`，内容照抄下面这份（**`allow_*` 不能省**，原因见下）：
 
-> ⚠️ 密钥仓库默认**只允许它的管理员/负责人触发的流水线**引用它。CNB 里跑的定时任务
-> 没有「人」这个作者，所以要放宽：`allow_slugs`（哪个仓库能用）、`allow_branches`、
-> `allow_events`。没放宽的表现是 `imports:` **静默注入空值** —— 也就是「令牌明明配了
-> 却没生效」，脚本会走「没有令牌」的分支，日志里只有一句警告。
+   ```yaml
+   # 授权：谁有权引用这个文件
+   allow_slugs: "StriveGlory/clash-daily"    # 注意是 slug，不是 URL
+   allow_branches: main
+   allow_events:
+     - crontab
+     - push
+     - "web_trigger*"
+
+   GH_DISPATCH_TOKEN: ghp_…   # 把真令牌粘在这里
+   ```
+
+3. 把 `.cnb.yml` 里 `imports:` 那几行的注释去掉，指向这个文件的 raw 地址：
+   `https://cnb.cool/StriveGlory/clash-daily-secrets/-/blob/main/envs.yml`
+
+> ⚠️ **`allow_*` 为什么不能省**：默认的判据是「流水线触发者是不是这个密钥仓库的
+> 开发者/负责人」。而定时任务的身份是**最后修改 `crontab` 配置并推送的那个人** ——
+> 他是 `clash-daily` 的成员，不是密钥仓库的成员，所以默认判据必然不过。
+> 一旦声明了 `allow_*`，系统就**完全忽略角色**、只按规则校验，且**所有规则都得通过**。
+> 表现是 `imports:` **静默注入空值** —— 令牌明明配了却没生效，日志里只有
+> 「⚠️ 没有 GH_DISPATCH_TOKEN」。
+>
+> ⚠️ `allow_slugs` 写的是**仓库 slug**（`组织/仓库`），`imports:` 里写的才是**完整
+> URL**。这两个最容易混。支持 glob：`*` 不跨 `/`，`**` 跨 `/`。
 >
 > ⚠️ `env:` 和 `imports:` 撞键时 **`env` 优先**。别在 `env:` 里写同名占位，否则配了也不生效。
+
+**怎么判断这步做对了**（不要靠猜）：点一次「立即跑一轮」，看「叫醒 GitHub 测速」那一步
+的日志。第一行是 `叫醒 GitHub 测速：zejiahuang/clash-daily · speedtest.yml @ main` 就是
+成了；如果第一行是 `⚠️ 没有 GH_DISPATCH_TOKEN`，就是 `imports:` 没生效（先查注释有没有
+去掉，再查 `allow_*`）。
 
 没配令牌时 `scripts/gh_dispatch.sh` **只警告、不失败**（`exit 0`），退回 GitHub 自己的
 cron 兜底 —— 慢，但流水线不会红。这是刻意的：刚建好仓库时最容易踩到的就是这一步，

@@ -325,7 +325,13 @@ def test_no_credentials_anywhere(problems: list[str]) -> None:
     for path in (WORKFLOW, ROOT / ".cnb.yml"):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         for label in _scan_credentials(json.dumps(data, ensure_ascii=False)):
-            problems.append(f"{path.name} 里{label} —— 这条链路应该零密钥")
+            problems.append(f"{path.name} 里{label} —— 仓库是公开的，令牌只许来自"
+                            f" CNB 的密钥仓库（imports: 注入），不许落在这里")
+
+    # README 也要扫：它是最容易被「顺手粘一个真令牌当示例」的地方，
+    # 而公开仓库里出现真令牌会被 GitHub 的密钥扫描**自动吊销**。
+    for label in _scan_credentials((ROOT / "README.md").read_text(encoding="utf-8")):
+        problems.append(f"README.md 里{label} —— 示例必须是占位符，不能是真令牌")
 
 
 # ---------------------------------------------------------------- D. 等待与触发
@@ -430,7 +436,7 @@ def test_wait_speed_accepts_matching_round(problems: list[str]) -> None:
             if data.get("run_id") != RUN_ID:
                 problems.append(f"落地的是别的轮次：{data.get('run_id')}")
         if "GITHUB_TOKEN" in got.stdout or "GITHUB_TOKEN" in got.stderr:
-            problems.append("等待脚本还在要令牌 —— 这条链路应该零密钥")
+            problems.append("等待脚本还在要令牌 —— 取结果是公开 raw，不需要任何凭据")
 
 
 def test_wait_speed_rejects_other_round(problems: list[str]) -> None:
@@ -753,7 +759,7 @@ def main() -> int:
             print("   -", item)
         return 1
     print("✓ 两段式接缝通过：候选字段够收尾用、上一轮的结果进不来、"
-          "GitHub 侧不做直连测速、全程零密钥、发布候选能穿过守卫且不冒充 cnb-bot、"
+          "GitHub 侧不做直连测速、仓库里没有任何密钥、发布候选能穿过守卫且不冒充 cnb-bot、"
           "工作流按 run_id 挡空跑、CNB 阶段顺序正确")
     return 0
 
