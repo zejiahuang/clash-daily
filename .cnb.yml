@@ -62,8 +62,8 @@ main:
       #          allow_events: [crontab, push, "web_trigger*"]
       #          GH_DISPATCH_TOKEN: ghp_xxx
       #    建好之前不要取消注释：imports 解析不到会让**整条流水线起不来**。
-        imports:
-          - https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml
+      imports:
+        - https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml
       stages: &daily_stages
         - name: 安装依赖
           script: |
