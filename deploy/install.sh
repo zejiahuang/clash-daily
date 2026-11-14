@@ -20,6 +20,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RUN_AT="${RUN_AT:-02:00}"
+# systemd 的 OnCalendar **不读** service 里的 TZ 环境变量，必须把时区写进表达式，
+# 否则 `02:00` 会按宿主机时区（这台机器是 UTC）解释 = 北京时间 10:00。
+RUN_TZ="${RUN_TZ:-Asia/Shanghai}"
 # ⚠️ 端口必须是 0–65535。66666 这类「看起来像端口」的五位数会直接 bind 失败。
 WEB_PORT="${WEB_PORT:-60066}"
 SERVICE_NAME="clash-daily"
@@ -127,7 +130,7 @@ cat > "$UNIT_DIR/${SERVICE_NAME}.timer" <<EOF
 Description=每天 ${RUN_AT} 跑一轮 clash-daily
 
 [Timer]
-OnCalendar=*-*-* ${RUN_AT}:00
+OnCalendar=*-*-* ${RUN_AT}:00 ${RUN_TZ}
 # 服务器关机/休眠错过了就补跑一次
 Persistent=true
 Unit=${SERVICE_NAME}.service
