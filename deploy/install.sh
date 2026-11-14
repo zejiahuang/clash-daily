@@ -94,6 +94,11 @@ fi
 
 UNIT_DIR="/etc/systemd/system"
 
+# 预下载内核是用 sudo 跑的，work/ 会变成 root 属主；而定时任务以 RUN_USER 执行，
+# 连 work/.run.lock 都建不出来。这里统一交还属主（logs/ 同理）。
+mkdir -p "$ROOT/logs"
+chown -R "$RUN_USER":"$RUN_USER" "$ROOT/work" "$ROOT/logs" 2>/dev/null || true
+
 # GitHub 只是仓库，PUBLISH=1 要能无交互 push。给了 token 就落一份仓库级凭据，
 # 没给也不报错 —— 服务器上可能已经用 ssh / credential helper 配好了。
 if [ -n "${GITHUB_TOKEN:-}" ]; then
