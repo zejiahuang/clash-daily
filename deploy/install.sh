@@ -90,6 +90,17 @@ if [ "$RUN_USER" = "root" ]; then
 fi
 
 UNIT_DIR="/etc/systemd/system"
+
+# GitHub 只是仓库，PUBLISH=1 要能无交互 push。给了 token 就落一份仓库级凭据，
+# 没给也不报错 —— 服务器上可能已经用 ssh / credential helper 配好了。
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  log "写入 .git-credentials（供 PUBLISH=1 推送用，权限 600）"
+  git config --local credential.helper "store --file=$ROOT/.git-credentials"
+  printf 'https://x-access-token:%s@github.com\n' "$GITHUB_TOKEN" > "$ROOT/.git-credentials"
+  chmod 600 "$ROOT/.git-credentials"
+  chown "$RUN_USER" "$ROOT/.git-credentials" 2>/dev/null || true
+fi
+
 log "写入 $UNIT_DIR/${SERVICE_NAME}.service 和 .timer（执行用户 $RUN_USER）"
 
 cat > "$UNIT_DIR/${SERVICE_NAME}.service" <<EOF

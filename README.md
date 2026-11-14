@@ -84,6 +84,7 @@ cd /opt/clash-daily
 sudo bash deploy/install.sh                 # 建 .venv、装依赖、跑单元测试、预下载内核、装 systemd 定时任务 + 订阅站点
 sudo bash deploy/install.sh --no-service    # 只装依赖，不装定时任务
 sudo RUN_AT=03:30 bash deploy/install.sh    # 换个时间（默认 02:00 北京时间）
+sudo GITHUB_TOKEN=ghp_xxx bash deploy/install.sh   # 顺手配好 PUBLISH 用的推送凭据
 ```
 
 安装器做四件事：`.venv` + `requirements.txt`、把 mihomo 内核提前下到
@@ -123,7 +124,8 @@ journalctl -u clash-daily.service -n 200 --no-pager
 GitHub 在这里**只是仓库**：不触发 Actions，不做测速。推不上去时退出码为 1，
 但 `dist/` 里的产物是好的 —— 订阅不会更新，这一点会明确写在日志里。
 
-服务器上配一次凭据（token 别写进 remote URL，否则 `git remote -v` 会明文显示）：
+服务器上配一次凭据（token 别写进 remote URL，否则 `git remote -v` 会明文显示）。
+`deploy/install.sh` 带 `GITHUB_TOKEN` 时会自动写好下面这份：
 
 ```bash
 git config --local credential.helper 'store --file=.git-credentials'
