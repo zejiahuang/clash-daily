@@ -4,13 +4,8 @@
 本地试跑（不做测速，只验证采集与解析）：
     python main.py --no-speedtest --max-nodes 50
 
-完整跑一次（本机一条龙，测速也在这台机器上做）：
+完整跑一次（抓取、延迟、下载测速全在这台机器上）：
     python main.py --out dist
-
-分成两段跑（CNB 延迟 → GitHub 测速 → CNB 收尾，线上就是这么跑的）：
-    python main.py --stage delay  --out dist          # 写 dist/candidates.json
-    python main.py --stage speed  --in dist/candidates.json --out dist/speed.json
-    python main.py --stage finish --out dist --speed-in dist/speed.json
 """
 
 from __future__ import annotations
@@ -23,7 +18,6 @@ from pathlib import Path
 
 from clashhunter import builder
 from clashhunter import countries as country_mod
-from clashhunter import speedjob
 from clashhunter.mihomo import SPEED_URL, TEST_URL
 
 
@@ -92,18 +86,6 @@ def parse_args(argv=None) -> argparse.Namespace:
                              "而只有进产物的那几十个才有人看")
     parser.add_argument("--no-speedtest", action="store_true",
                         help="跳过 mihomo 测速（本地没网时用，仅验证采集链路）")
-    parser.add_argument("--stage", choices=("all", "delay", "speed", "finish"),
-                        default="all",
-                        help="all=本机一条龙；delay=只跑到延迟测速并写 candidates.json；"
-                             "speed=只做下载测速（GitHub runner 上跑）；"
-                             "finish=只做国家判定与出产物（读 candidates.json + speed.json）")
-    # 两个名字都留着：`--in` 是 speed 段的输入（候选），`--speed-in` 是 finish 段的
-    # 输入（测速结果）。语义不同但都是「上一段的产物」，共用一个 dest 就够了；
-    # ⚠️ 只写其中一个会让 .cnb.yml 里另一种写法直接报 unrecognized arguments。
-    parser.add_argument("--in", "--speed-in", dest="speed_in", default="",
-                        help="speed 段读 candidates.json 的路径 / finish 段读 speed.json 的路径")
-    parser.add_argument("--speed-out", default="",
-                        help="speed 段把结果写到哪里（默认 <out>/speed.json）")
     parser.add_argument("--quiet", action="store_true", help="少打日志")
     return parser.parse_args(argv)
 
@@ -124,25 +106,6 @@ def main(argv=None) -> int:
     log("=" * 62)
     if vantage:
         log(f"测速位置：{vantage}（写进订阅文件头部）")
-
-    # speed 段：只做下载测速，跑在 GitHub runner 上（见 clashhunter/speedjob.py）
-    if args.stage == "speed":
-        if not args.speed_in:
-            print("[失败] --stage speed 需要 --in <candidates.json>", file=sys.stderr)
-            return 1
-        speed_out = Path(args.speed_out) if args.speed_out else Path(args.out) / "speed.json"
-        try:
-            speedjob.run(
-                Path(args.speed_in), speed_out, work_dir=Path(args.work),
-                screen_bytes=args.speed_bytes, workers=args.speed_workers,
-                timeout=args.speed_timeout, refine_top=args.refine_top,
-                refine_workers=args.refine_workers, refine_bytes=args.refine_bytes,
-                speed_url=args.speed_url, ip_timeout=args.ip_timeout, log=log,
-            )
-        except SystemExit as exc:
-            print(f"[失败] {exc}", file=sys.stderr)
-            return 1
-        return 0
 
     try:
         result = builder.build(
@@ -172,23 +135,11 @@ def main(argv=None) -> int:
             fraud_top=args.fraud_top,
             no_speedtest=args.no_speedtest,
             vantage=vantage,
-            stage=args.stage,
-            candidates_path=Path(args.out) / "candidates.json",
-            speed_path=Path(args.speed_in) if args.speed_in else Path(args.out) / "speed.json",
             log=log,
         )
     except SystemExit as exc:
         print(f"[失败] {exc}", file=sys.stderr)
         return 1
-
-    # delay 段没有产物可写：候选文件就是它的全部输出，收尾由 finish 段做
-    if args.stage == "delay":
-        log("")
-        log("=" * 62)
-        log(f"延迟测速段完成：候选 {result.stats.delay_ok} 个，"
-            f"耗时 {time.time() - started:.0f}s")
-        log("=" * 62)
-        return 0
 
     paths = builder.write_outputs(result, Path(args.out), log=log)
     if not paths:
@@ -206,10 +157,10 @@ def main(argv=None) -> int:
 
 
 def _detect_vantage(out_dir: Path) -> str:
-    """从工作流写下的 runner-geo.json 拼出「国家·城市」。
+    """从 `runner-geo.json` 拼出「国家·城市」。
 
-    工作流的「记录测速机位置」步骤在 main.py 之前跑，所以这里直接读文件即可。
-    读不到就返回空串 —— 头部只是少一行，不影响构建。
+    `scripts/run_local.sh` 在跑 main.py 之前先用 ip-api 记下这台机器的出口位置，
+    所以这里直接读文件即可。读不到就返回空串 —— 头部只是少一行，不影响构建。
     """
     geo_file = out_dir / "runner-geo.json"
     if not geo_file.is_file():

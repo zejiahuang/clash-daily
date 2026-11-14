@@ -90,40 +90,32 @@ sync_and_push() {
   return 1
 }
 
-# 检出用的凭据不一定带写权限。先试默认，失败再显式带 CNB_TOKEN。
-# ⚠️ 失败时把 CNB_* 环境变量打出来 —— 变量名猜错的话下次还是错的，
-#    打出来才知道真名。
-# REMOTE 可改：CNB 仓库关闭后，服务器上通常把 origin 指向 GitHub（或另一个自建仓库）。
+# 先按远端默认凭据推（服务器上可以预先配好 credential.helper）。
 REMOTE="${REMOTE:-origin}"
 REMOTE_URL="$(git remote get-url "$REMOTE" 2>/dev/null || true)"
 if sync_and_push "$REMOTE"; then
   exit 0
 fi
 
-# CNB 的令牌兜底只对 cnb.cool 有意义；远端已经换成 GitHub 时直接失败，别去猜 CNB_*。
+# 兜底：环境里给了 GitHub token 就带凭据再试一次。
+# 不把 token 写进 remote —— 那会让 `git remote -v` 和 .git/config 里一直躺着密钥。
 case "$REMOTE_URL" in
-  *cnb.cool*) ;;
+  *github.com*) ;;
   *)
     echo "远端 $REMOTE（${REMOTE_URL:-未配置}）推送失败 —— 检查凭据 / 分支保护"
     exit 1
     ;;
 esac
 
-echo "默认 push 失败，改用 CNB_TOKEN 重试"
-if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then
-  echo "===== 拼不出带凭据的地址，打印环境以便定位 ====="
-  env | grep -i '^CNB_' | sed 's/\(TOKEN[A-Z_]*=\).*/\1***/' | sort
-  exit 1
-fi
-if [ -z "${CNB_TOKEN:-}" ]; then
-  echo "===== CNB_TOKEN 未注入，打印环境以便定位 ====="
-  env | grep -i '^CNB_' | sort
+TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -z "$TOKEN" ]; then
+  echo "远端 $REMOTE 推送失败，且没有 GITHUB_TOKEN / GH_TOKEN 可用于重试"
   exit 1
 fi
 
-base="${CNB_REPO_URL_HTTPS:-https://cnb.cool/${CNB_REPO_SLUG}.git}"
-if sync_and_push "https://cnb:${CNB_TOKEN}@${base#https://}"; then
+echo "默认 push 失败，改用 GITHUB_TOKEN 重试"
+if sync_and_push "https://x-access-token:${TOKEN}@${REMOTE_URL#https://}"; then
   exit 0
 fi
-echo "带凭据重试也失败 —— 产物没提交上去"
+echo "带 token 重试也失败 —— 产物没提交上去"
 exit 1

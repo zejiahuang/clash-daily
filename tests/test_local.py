@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """单机部署的接线自检：`scripts/run_local.sh` 传给 main.py 的参数必须真的存在。
 
-为什么值得单独一个测试：这条脚本是**唯一**不经过 `.cnb.yml` 的入口，改 main.py
-的参数名时不会有任何东西提醒你 —— 表现是「定时任务天天红，日志里一行
+为什么值得单独一个测试：`run_local.sh` 是**唯一**入口（GitHub 只存代码、不跑 Actions），
+改 main.py 的参数名时不会有任何东西提醒你 —— 表现是「定时任务天天红，日志里一行
 unrecognized arguments」，而那时已经是凌晨两点、人不在电脑前。
 """
 
@@ -41,9 +41,9 @@ def main() -> None:
     missing = sorted(f for f in flags if f not in help_text)
     assert not missing, f"main.py 不认这些参数了：{missing}"
 
-    # 单机一条龙必须显式 --stage all：默认值虽然是 all，但写出来才能防止
-    # 以后有人把默认值改成 delay 之后「定时任务只跑了一半」却毫无提示。
-    assert "--stage all" in block, "run_local.sh 必须显式 --stage all"
+    # 单机一条龙已经不再有 stage：拆分那套（candidates/speed 交接）随 GitHub Actions
+    # 一起删除了，脚本再传 --stage 会直接被 argparse 拒绝。
+    assert "--stage" not in block, "run_local.sh 不应再传 --stage（拆分流程已删除）"
 
     # 时区：crontab / systemd 按服务器本地时区触发，日志和产物头部必须固定北京时间。
     assert "export TZ=Asia/Shanghai" in script, "run_local.sh 必须固定 TZ=Asia/Shanghai"
@@ -63,9 +63,11 @@ def main() -> None:
     assert "OnCalendar=" in install and "Persistent=true" in install, \
         "timer 必须用 OnCalendar + Persistent=true"
     assert "PUBLISH=1" in install, "service 里要显式写 PUBLISH（不想回写改成 0）"
+    assert "${WEB_SERVICE_NAME}.service" in install, \
+        "install.sh 必须写订阅站点 unit（60066 端口）"
 
-    print("✓ 单机部署接线通过：参数与 main.py 一致、阶段/时区/锁/防挂起齐全、"
-          "systemd 的 service+timer 都写了")
+    print("✓ 单机部署接线通过：参数与 main.py 一致、时区/锁/防挂起齐全、"
+          "systemd 的 timer 与订阅站点 unit 都写了")
 
 
 if __name__ == "__main__":

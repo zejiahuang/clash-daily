@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
 # 单机跑完整一轮：采集 → 去重 → TCP 预筛 → 延迟测速 → 下载测速 → 出产物 →（可选）回写仓库。
 #
-# 和 .cnb.yml 的那三条流水线不同，这里**不拆分**：
-#   - 延迟测速和下载测速都在这台机器上做，所以产物头部的「测速位置」只有一个，
-#     就是这台机器的出口位置 —— 订阅里的速度对使用者就是这个视角的实测值。
-#   - 不再需要 GitHub 的那一段（workflow_dispatch / wait_speed / speed.json 回传）。
+# 这是**唯一**的运行方式：GitHub 只用来存代码和 dist/，不再跑 Actions；
+# CNB 的流水线也已废弃。延迟和下载测速都在这台机器上做，所以产物头部的
+# 「测速位置」只有一个，就是这台机器的出口位置。
 #
 # 用法：
 #   bash scripts/run_local.sh                 # 跑一轮，产物在 dist/
 #   PUBLISH=0 bash scripts/run_local.sh       # 只跑，不提交回仓库
 #   EXTRA_ARGS="--sources manifest" bash scripts/run_local.sh
 #
-# 可调环境变量（都有默认值，和 .cnb.yml 里的同名变量一致）：
+# 可调环境变量（都有默认值）：
 #   MAX_NODES=80  COUNTRY_SHARE=0.2  TOP_PER_COUNTRY=0  FRAUD_TOP=80
 #   SPEED_MAX=0   SPEED_WORKERS=32   SPEED_BYTES=6000000  SPEED_TIMEOUT=10
 #   REFINE_TOP=300 REFINE_WORKERS=16 REFINE_BYTES=24000000
 #   DELAY_WORKERS=32 DELAY_TIMEOUT=5000 IP_TIMEOUT=6
 #   PULL=1（先 git pull --rebase）  PUBLISH=1（跑完提交 dist/ 并 push）
-#   REMOTE=origin（推送到哪个远端；CNB 关了就把 origin 指到 GitHub，或改成别的名字）
+#   REMOTE=origin（推送到哪个远端）  GITHUB_TOKEN（可选，推送兜底凭据）
 #   LOG_KEEP=30（保留最近多少份日志）  EXTRA_ARGS（原样追加给 main.py）
 #
 # 退出码：0 = 产物正常（发布失败也算失败，见末尾）；非 0 = 这一轮没产出可用产物。
@@ -119,10 +118,9 @@ else
 fi
 
 # ---------- 4. 主流程（测速也在这台机器上）----------
-log "main.py --stage all"
+log "main.py（本机跑完整一轮）"
 # shellcheck disable=SC2086
 "$PY" main.py \
-  --stage all \
   --out dist \
   --work work \
   --max-nodes "${MAX_NODES:-80}" \
