@@ -3,12 +3,15 @@
 #
 #   sudo bash deploy/install.sh                 # 装 systemd 定时任务（默认 02:00 北京时间）
 #   sudo RUN_AT=03:30 bash deploy/install.sh    # 换个时间
+#   sudo WEB_PORT=8080 bash deploy/install.sh   # 换订阅站点端口（默认 60066）
 #   bash deploy/install.sh --no-service         # 只装依赖，不装定时任务
+#   bash deploy/install.sh --no-web             # 不装订阅 HTTP 站点
 #
-# 做的事只有三件：
+# 做的事只有四件：
 #   1. 建 .venv 并装 requirements.txt（不污染系统 Python）
 #   2. 预下载 mihomo 内核到 work/bin（第一次跑的时候下载也行，失败会重试镜像）
 #   3. 写 systemd 的 service + timer（没有 systemd 时打印 crontab 行，不强行改）
+#   4. 写订阅站点的 service（dist/ 直挂 HTTP，默认 0.0.0.0:60066）
 #
 # 产物仍然写在本仓库的 dist/ 下；要不要回写远端由 run_local.sh 的 PUBLISH 决定。
 set -euo pipefail
@@ -17,12 +20,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RUN_AT="${RUN_AT:-02:00}"
+# ⚠️ 端口必须是 0–65535。66666 这类「看起来像端口」的五位数会直接 bind 失败。
+WEB_PORT="${WEB_PORT:-60066}"
 SERVICE_NAME="clash-daily"
+WEB_SERVICE_NAME="clash-daily-web"
 NO_SERVICE=0
+NO_WEB=0
 for arg in "$@"; do
   case "$arg" in
     --no-service) NO_SERVICE=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --no-web) NO_WEB=1 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
 done
@@ -62,11 +70,12 @@ fi
 
 # ---------- 3. 定时任务 ----------
 if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
-  log "没有 systemd，下面这行加进 crontab -e 即可："
+  log "没有 systemd，下面这些行加进 crontab -e / 自启脚本即可："
   echo
   echo "0 2 * * * PUBLISH=1 /usr/bin/bash $ROOT/scripts/run_local.sh >> $ROOT/logs/cron.log 2>&1"
+  echo "nohup $ROOT/.venv/bin/python $ROOT/scripts/serve_dist.py --port ${WEB_PORT} >> $ROOT/logs/serve.log 2>&1 &"
   echo
-  log "（时间按服务器本地时区解释，脚本内部已经固定用 Asia/Shanghai）"
+  log "（定时时间按服务器本地时区解释，脚本内部已经固定用 Asia/Shanghai）"
   exit 0
 fi
 
@@ -122,3 +131,41 @@ systemctl enable --now "${SERVICE_NAME}.timer"
 log "已启用。查看下一次触发：systemctl list-timers ${SERVICE_NAME}.timer"
 log "手动跑一轮：sudo systemctl start ${SERVICE_NAME}.service"
 log "看日志：    journalctl -u ${SERVICE_NAME}.service -n 200 --no-pager"
+
+# ---------- 4. 订阅站点 ----------
+if [ "$NO_WEB" = "1" ]; then
+  log "--no-web：跳过订阅 HTTP 站点"
+  exit 0
+fi
+
+log "写入 $UNIT_DIR/${WEB_SERVICE_NAME}.service（端口 ${WEB_PORT}）"
+cat > "$UNIT_DIR/${WEB_SERVICE_NAME}.service" <<EOF
+[Unit]
+Description=clash-daily 订阅站点（dist/ 直挂 HTTP，端口 ${WEB_PORT}）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${RUN_USER}
+WorkingDirectory=${ROOT}
+Environment=TZ=Asia/Shanghai
+ExecStart=${ROOT}/.venv/bin/python ${ROOT}/scripts/serve_dist.py --bind 0.0.0.0 --port ${WEB_PORT} --dist ${ROOT}/dist
+# 产物每天更新，进程本身只是读文件；崩了自动拉起即可
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now "${WEB_SERVICE_NAME}.service"
+
+log "订阅站点已启动：http://<服务器IP>:${WEB_PORT}/"
+log "  Clash：  http://<服务器IP>:${WEB_PORT}/clash.yaml"
+log "  Base64： http://<服务器IP>:${WEB_PORT}/clash.base64.txt"
+log "看日志：  journalctl -u ${WEB_SERVICE_NAME}.service -n 200 --no-pager"
+log "放行端口：ufw allow ${WEB_PORT}/tcp  或  firewall-cmd --add-port=${WEB_PORT}/tcp --permanent && firewall-cmd --reload"

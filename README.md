@@ -50,6 +50,17 @@ https://cnb.cool/StriveGlory/clash-daily/-/git/raw/main/dist/clash.base64.txt
 > 迁移到 GitHub 后对应的是 `https://raw.githubusercontent.com/<owner>/<repo>/main/dist/clash.yaml`；
 > 换成别的托管也一样，认准「返回 `text/plain` 且字节数与仓库里一致」这一条判据。
 
+单机部署（§三）会同时起一个订阅站点，直接在服务器上提供 `dist/` 的产物：
+
+```
+http://<服务器IP>:60066/clash.yaml          # Clash / Mihomo
+http://<服务器IP>:60066/clash.base64.txt    # Base64
+http://<服务器IP>:60066/                    # 静态页（订阅地址、统计、源站状态）
+```
+
+> ⚠️ **端口上限是 65535，`66666` 不是合法端口**（`bind()` 会直接 `OverflowError`）。
+> 本项目默认用 `60066`；想换端口见 §三.4。
+
 > ⚠️ **CNB 的文件直链是 `/-/git/raw/<分支>/<路径>`，不是 `/-/raw/`。**
 > `/-/raw/...` 会返回 `200 text/html` 的前端页面（约 131 KB），客户端解析必然失败。
 > 实测判据：`curl -sI '.../-/git/raw/main/dist/clash.yaml'` 的
@@ -156,16 +167,41 @@ journalctl -u clash-daily.service -n 200 --no-pager
 
 CNB 仓库关闭后，把 `origin` 指到新的仓库（例如 GitHub），或者在本地加一个远端后
 用 `REMOTE=github bash scripts/run_local.sh` 指定它；同步（`PULL=1`）和推送都会用同一个名字。
-**订阅地址也要跟着换**：`dist/` 推到哪里，§一 那个直链就换成哪里的 raw 地址。
+**订阅地址也要跟着换**：`dist/` 推到哪里，§一 那个直链就换成哪里的 raw 地址；
+或者干脆不推仓库，直接用 §三.4 的 `http://<服务器IP>:60066/clash.yaml`。
 
-### 4. 和两段式（CNB + GitHub）的关系
+### 4. 订阅站点（默认 60066 端口）
+
+`deploy/install.sh` 会额外装一个 `clash-daily-web.service`，把 `dist/` 直接挂到 HTTP 上。
+首页是自包含的静态页：订阅地址（带复制按钮）、本轮统计、出口地区分布、源站状态，
+全部从 `dist/report.json` 现读。
+
+```
+http://<服务器IP>:60066/                    # 静态页
+http://<服务器IP>:60066/clash.yaml          # Clash / Mihomo
+http://<服务器IP>:60066/clash.base64.txt    # Base64
+http://<服务器IP>:60066/report.md           # 本轮报告
+```
+
+- 服务**只读** `dist/`，每次请求现读 —— 每天流水线跑完立即生效，**不用重启服务**
+- 只放行白名单里的产物文件，路径遍历一律 404（判据在 `tests/test_serve.py`）
+- 换端口：`sudo WEB_PORT=8080 bash deploy/install.sh`；只想装定时任务：`--no-web`
+- 手动起：`.venv/bin/python scripts/serve_dist.py --port 60066`
+- 防火墙要单独放行：`sudo ufw allow 60066/tcp`，或
+  `sudo firewall-cmd --add-port=60066/tcp --permanent && sudo firewall-cmd --reload`
+- ⚠️ **端口上限是 65535**，`66666` 不是合法端口，绑定时会直接 `OverflowError`
+
+> 这是「自己在服务器上分销」：订阅地址就是你服务器的地址，不依赖 CNB / GitHub 的 raw 直链。
+> 代价是**服务器必须一直在线**，并且端口要对订阅客户端可达。
+
+### 5. 和两段式（CNB + GitHub）的关系
 
 `main.py --stage all` 就是原来「delay 段 + GitHub 测速段 + finish 段」拼起来：
 `candidates.json` / `speed.json` 的交接、`run_id` 对账、`workflow_dispatch` 令牌
 在这条路上全都不需要。`.cnb.yml` 和 `.github/workflows/speedtest.yml` 保留但**可选**，
 原样推代码仍会触发它们（推 build 只跑自检，不测速）。
 
-### 5. 服务器要求
+### 6. 服务器要求
 
 - Linux x86_64 / arm64，Python ≥ 3.9（`deploy/install.sh` 用 `python3 -m venv`）
 - **必须能直连外网**：mihomo 自己 dial 节点，HTTP 代理环境变量不参与测速。
