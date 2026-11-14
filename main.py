@@ -37,6 +37,8 @@ def parse_args(argv=None) -> argparse.Namespace:
 
     parser.add_argument("--tcp-timeout", type=float, default=3.0, help="TCP 预筛单端点超时(秒)")
     parser.add_argument("--tcp-workers", type=int, default=128, help="TCP 预筛并发")
+    parser.add_argument("--max-ports-per-server", type=int, default=6,
+                        help="同一个 IP 最多探测多少个端口（防端口扫描误判，0=不限）")
 
     parser.add_argument("--delay-url", default=TEST_URL, help="延迟测速的探测 URL")
     parser.add_argument("--delay-timeout", type=int, default=5000, help="单节点延迟测速超时(毫秒)")
@@ -115,6 +117,7 @@ def main(argv=None) -> int:
             max_articles=args.max_articles,
             tcp_timeout=args.tcp_timeout,
             tcp_workers=args.tcp_workers,
+            max_ports_per_server=args.max_ports_per_server,
             delay_url=args.delay_url,
             delay_timeout_ms=args.delay_timeout,
             delay_workers=args.delay_workers,

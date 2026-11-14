@@ -96,6 +96,41 @@ def _delay_all(mh: Mihomo, proxies: list[dict], *, url: str, timeout_ms: int,
 # --------------------------------------------------------------------------- 主流程
 
 
+def _cap_ports_per_server(proxies: list[dict], limit: int, *, log=print) -> list[dict]:
+    """同一个 IP 最多保留 limit 个不同端口。
+
+    为什么需要：免费节点站里大量是「一个 IP 开放几十上百个端口」的 dump。
+    把它们全探一遍，在云厂商看来就是端口扫描 —— 实测 129 个端口触发了
+    InstaBox 的滥用检测，整台机器被锁 24 小时。保留顺序 = 输入顺序，
+    所以同一份输入的结果可复现。
+    """
+    if limit <= 0:
+        return proxies
+    ports: dict[str, set[int]] = {}
+    kept: list[dict] = []
+    dropped = 0
+    for proxy in proxies:
+        server = str(proxy.get("server") or "")
+        try:
+            port = int(proxy.get("port"))
+        except (TypeError, ValueError):
+            kept.append(proxy)
+            continue
+        bucket = ports.setdefault(server, set())
+        if port in bucket:
+            kept.append(proxy)
+            continue
+        if len(bucket) >= limit:
+            dropped += 1
+            continue
+        bucket.add(port)
+        kept.append(proxy)
+    if dropped:
+        log(f"  同一 IP 端口上限 {limit}：跳过 {dropped} 个节点"
+            f"（再多探就是端口扫描，会被云厂商锁机器）")
+    return kept
+
+
 def build(
     *,
     out_dir: Path,
@@ -104,6 +139,10 @@ def build(
     max_articles: int = 3,
     tcp_timeout: float = 3.0,
     tcp_workers: int = 128,
+    # 同一个 IP 最多只探这么多个端口。节点站里常见「一个 IP 挂几十上百个端口」的 dump，
+    # 对云厂商来说这就是**端口扫描**：实测 129 个端口触发了 InstaBox 的滥用检测，
+    # 整台机器被锁 24 小时。0 = 不限制（只在明确知道自己在干什么时用）。
+    max_ports_per_server: int = 6,
     delay_url: str = TEST_URL,
     delay_timeout_ms: int = 5000,
     delay_workers: int = 32,
@@ -175,6 +214,7 @@ def build(
 
     # 3. TCP 预筛 ---------------------------------------------------------
     log("[3/6] TCP 预筛")
+    unique = _cap_ports_per_server(unique, max_ports_per_server, log=log)
     endpoint_map = netcheck.probe_endpoints(
         [(p["server"], p["port"]) for p in unique],
         timeout=tcp_timeout, workers=tcp_workers, log=log,
