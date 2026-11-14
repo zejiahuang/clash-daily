@@ -59,8 +59,12 @@ main:
       #      他不是密钥仓库成员 ⇒ 必然不过 ⇒ imports 静默注入空值）：
       #          allow_slugs: "StriveGlory/clash-daily"     # slug，不是 URL
       #          allow_branches: main
-      #          allow_events: [crontab, push, "web_trigger*"]
+      #          allow_events: ["crontab*", push, "web_trigger*"]
       #          GH_DISPATCH_TOKEN: ghp_xxx
+      #      ⚠️ 定时任务的事件名是完整的键 `crontab: 0 2 * * *`，不是 `crontab`。
+      #         allow_events 是 glob 精确匹配，只写 `crontab` 匹配不上 ⇒ imports 取不到
+      #         ⇒ 整条流水线在 prepare 阶段 0.4 秒直接失败（所有 stage 都还是 pending）。
+      #         `"crontab*"` 两种写法都能覆盖。
       #    建好之前不要取消注释：imports 解析不到会让**整条流水线起不来**。
       imports:
         - https://cnb.cool/StriveGlory/key/-/blob/main/envs.yml

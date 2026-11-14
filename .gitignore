@@ -12,6 +12,9 @@ __pycache__/
 .venv/
 venv/
 
+# 单机部署的每轮日志（run-YYYYmmdd-HHMMSS.log / cron.log）
+/logs/
+
 # 编辑器
 .vscode/
 .idea/
