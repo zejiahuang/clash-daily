@@ -846,3 +846,74 @@ CNB 的文件直链是 **`/-/git/raw/<分支>/<路径>`**，不是 `/-/raw/`。2
 
 上面这些 CNB / Gitee / AtomGit 的表格仅作选型记录。现在换平台只需要换一台服务器，
 不再需要重新适配任何 CI。
+
+## 十、Windows 本机运行（自动上传 GitHub）
+
+不想用服务器时，自己的 Windows 电脑也能跑完整一轮。同一份 Python 代码，
+Windows / Linux / macOS 行为一致；区别只在入口脚本。
+
+### 1. 准备
+
+- **Python 3.11+**（安装时勾选 `Add python.exe to PATH`）
+- **Git for Windows**
+- 一个 GitHub token（经典 token 勾 `repo`，细粒度 token 给目标仓库 `Contents: Read and write`）
+
+### 2. 运行
+
+在仓库根目录双击 `run.bat`，或者从 cmd 运行：
+
+```bat
+run.bat                                  :: 完整跑一轮并自动 push
+run.bat --max-nodes 40                   :: 少留一些节点
+run.bat --no-publish                     :: 只跑，不上传
+run.bat --pull                           :: 先 git pull --ff-only 再跑
+run.bat -- --sources manifest --no-speedtest   :: `--` 之后原样传给 main.py
+```
+
+首次运行会自动创建 `.venv` 并安装 `requirements.txt`，之后不会重复安装。
+
+上传凭据二选一：
+
+```bat
+:: A. 环境变量（推荐，token 不会写进 .git/config）
+set GITHUB_TOKEN=ghp_xxx
+run.bat
+
+:: B. 交给 Git Credential Manager：第一次 push 时弹窗登录 GitHub 即可
+run.bat
+```
+
+### 3. 它做了什么
+
+1. 记录本机出口位置 → `dist/runner-geo.json`（产物头部「测速位置」）
+2. `main.py` 跑完整一轮：采集 → 去重 → TCP 预筛 → 延迟 → 下载测速 → 纯净度 → 出产物
+3. `scripts/verify_dist.py` 校验（节点名不重复、配置能被客户端加载）
+4. `git add dist` → commit → `git push`
+5. 日志写到 `logs/run-YYYYmmdd-HHMMSS.log`，默认保留最近 30 份
+
+同一时间只允许一轮（`work/.run.lock` 文件锁），重复启动会直接退出。
+
+### 4. Windows 上的坑
+
+- 首次运行 Windows 防火墙会弹窗，**允许 `python.exe` 与 `mihomo.exe`**，否则测速会全部超时。
+- 本机如果已经开着 Clash，`7891` / `9090` 可能被占用。端口可以换，不用改代码：
+
+  ```bat
+  set MIHOMO_API_PORT=19090
+  set MIHOMO_MIXED_PORT=17891
+  set LISTENER_BASE_PORT=30000
+  run.bat
+  ```
+
+- 如果 mihomo 报 `bind: An attempt was made to access a socket in a way
+  forbidden by its access permissions`，多半是 Hyper-V 保留了端口段：
+
+  ```bat
+  netsh int ipv4 show excludedportrange protocol=tcp
+  ```
+
+  换一段 `LISTENER_BASE_PORT`（如 30000）即可。
+- 电脑休眠会中断测速。建议跑之前把电源计划设为「高性能」，并临时关掉自动睡眠。
+- 本地和服务器**不要同时**启用自动上传：两边都会 push `dist/`，后推的覆盖先推的。
+
+> GitHub 在这里仍然只是仓库：push 不会触发任何 Actions 或构建。

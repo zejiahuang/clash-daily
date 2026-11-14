@@ -41,8 +41,10 @@ import yaml
 from .web import FetchError, UA, fetch_json
 
 API_HOST = "127.0.0.1"
-API_PORT = 9090
-MIXED_PORT = 7891
+# 端口可用环境变量覆盖：Windows 上本机很可能已经开着 Clash（7890/7891/9090
+# 都被占），或者 Hyper-V 保留了某段端口。冲突时不用改代码，设变量即可。
+API_PORT = int(os.environ.get("MIHOMO_API_PORT", "9090"))
+MIXED_PORT = int(os.environ.get("MIHOMO_MIXED_PORT", "7891"))
 
 # 拿不到「最新 tag」时用哪个版本下载内核。
 #
@@ -67,7 +69,7 @@ TEST_URL = "https://www.gstatic.com/generate_204"
 # 服务端仍然只发 2 MB 就 EOF，total 永远到不了 6 MB —— 改动静默失效，
 # 产物里 5 个节点照样卡在 38.15 的封顶值上。URL 与 max_bytes 必须同源。
 SPEED_URL = "https://speed.cloudflare.com/__down?bytes={bytes}"
-LISTENER_BASE_PORT = 20000
+LISTENER_BASE_PORT = int(os.environ.get("LISTENER_BASE_PORT", "20000"))
 
 # 测速源候选。复测时每个节点对**多个源**各测一遍，取中位数 —— 一个源只代表
 # 「到那个站有多快」，多个源的中位数才接近「到互联网整体有多快」。
