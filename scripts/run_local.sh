@@ -17,6 +17,7 @@
 #   REFINE_TOP=300 REFINE_WORKERS=16 REFINE_BYTES=24000000
 #   DELAY_WORKERS=32 DELAY_TIMEOUT=5000 IP_TIMEOUT=6
 #   PULL=1（先 git pull --rebase）  PUBLISH=1（跑完提交 dist/ 并 push）
+#   REMOTE=origin（推送到哪个远端；CNB 关了就把 origin 指到 GitHub，或改成别的名字）
 #   LOG_KEEP=30（保留最近多少份日志）  EXTRA_ARGS（原样追加给 main.py）
 #
 # 退出码：0 = 产物正常（发布失败也算失败，见末尾）；非 0 = 这一轮没产出可用产物。
@@ -78,9 +79,12 @@ log "解释器：$PY（$("$PY" -V 2>&1)）"
 # ---------- 2. 同步代码（可选）----------
 # 产物是提交回 main 的，本地落后就会在 push 时被拒；先 rebase 一次最省事。
 if [ "${PULL:-1}" = "1" ] && git rev-parse --git-dir >/dev/null 2>&1; then
-  if git remote get-url origin >/dev/null 2>&1; then
-    log "git pull --rebase --autostash origin main"
-    git pull --rebase --autostash origin main || log "[warn] 同步失败，继续用本地代码跑"
+  REMOTE_NAME="${REMOTE:-origin}"
+  if git remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
+    log "git pull --rebase --autostash $REMOTE_NAME main"
+    git pull --rebase --autostash "$REMOTE_NAME" main || log "[warn] 同步失败，继续用本地代码跑"
+  else
+    log "[warn] 远端 $REMOTE_NAME 不存在，跳过同步"
   fi
 fi
 
@@ -144,8 +148,8 @@ log "产物校验通过"
 
 # ---------- 6. 回写仓库（可选）----------
 if [ "${PUBLISH:-1}" = "1" ]; then
-  log "提交 dist/ 并推送"
-  if bash scripts/ci_commit.sh \
+  log "提交 dist/ 并推送到 ${REMOTE:-origin}"
+  if REMOTE="${REMOTE:-origin}" bash scripts/ci_commit.sh \
       "chore(nodes): 更新 $(date +'%Y-%m-%d %H:%M') 北京时间（单机）"; then
     log "已推送"
   else

@@ -93,9 +93,21 @@ sync_and_push() {
 # 检出用的凭据不一定带写权限。先试默认，失败再显式带 CNB_TOKEN。
 # ⚠️ 失败时把 CNB_* 环境变量打出来 —— 变量名猜错的话下次还是错的，
 #    打出来才知道真名。
-if sync_and_push origin; then
+# REMOTE 可改：CNB 仓库关闭后，服务器上通常把 origin 指向 GitHub（或另一个自建仓库）。
+REMOTE="${REMOTE:-origin}"
+REMOTE_URL="$(git remote get-url "$REMOTE" 2>/dev/null || true)"
+if sync_and_push "$REMOTE"; then
   exit 0
 fi
+
+# CNB 的令牌兜底只对 cnb.cool 有意义；远端已经换成 GitHub 时直接失败，别去猜 CNB_*。
+case "$REMOTE_URL" in
+  *cnb.cool*) ;;
+  *)
+    echo "远端 $REMOTE（${REMOTE_URL:-未配置}）推送失败 —— 检查凭据 / 分支保护"
+    exit 1
+    ;;
+esac
 
 echo "默认 push 失败，改用 CNB_TOKEN 重试"
 if [ -z "${CNB_REPO_URL_HTTPS:-}" ] && [ -z "${CNB_REPO_SLUG:-}" ]; then

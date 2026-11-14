@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -264,12 +266,86 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"加载 scripts/probe_env.py 失败：{type(exc).__name__}: {exc}")
 
+    # 10. GitHub 自动搜索：静态清单里已有的仓不重复抓；blob 链接换成 raw 直链
+    saved = source_mod.fetch
+    calls: list[str] = []
+
+    def _gh(url, **kwargs):
+        calls.append(url)
+        if "api.github.com/search/repositories" in url:
+            return json.dumps({"items": [
+                {"full_name": "zhuhaiuk/free-nodes", "archived": False, "fork": False},
+                {"full_name": "someone/new-sub", "archived": False, "fork": False},
+            ]})
+        if "api.github.com/repos/someone/new-sub/readme" in url:
+            return ("免费订阅："
+                    "https://github.com/someone/new-sub/blob/main/sub/clash.yaml\n")
+        if url == ("https://raw.githubusercontent.com/someone/new-sub/"
+                   "main/sub/clash.yaml"):
+            return ("proxies:\n"
+                    "  - {name: a, type: ss, server: 1.2.3.4, port: 443, "
+                    "cipher: aes-128-gcm, password: x}")
+        raise source_mod.FetchError(f"404 {url}")
+
+    source_mod.fetch = _gh
+    try:
+        gh_report = source_mod._collect_github_search(log=lambda *a, **k: None)
+    finally:
+        source_mod.fetch = saved
+
+    if gh_report.sid != "github-search":
+        problems.append(f"GitHub 动态源的 sid 应为 github-search，实得 {gh_report.sid!r}")
+    if len(gh_report.proxies) != 1:
+        problems.append(f"GitHub 搜索应解析出 1 个节点，实得 {len(gh_report.proxies)}")
+    if any("zhuhaiuk" in url for url in calls):
+        problems.append("GitHub 搜索把静态清单里已有的仓又抓了一遍")
+    if not any(url.endswith("/main/sub/clash.yaml") for url in calls):
+        problems.append(f"README 里的 blob 链接没换成 raw 直链：{calls}")
+
+    # 11. GitHub 不可达 / 限额用完时只记 note，不能让整轮采集抛异常
+    def _dead(url, **kwargs):
+        raise source_mod.FetchError(f"403 rate limit: {url}")
+
+    source_mod.fetch = _dead
+    try:
+        dead_report = source_mod._collect_github_search(log=lambda *a, **k: None)
+    finally:
+        source_mod.fetch = saved
+    if dead_report.proxies or dead_report.error:
+        problems.append(f"GitHub 不可达时不该产出节点或报 error：{dead_report}")
+    if not dead_report.note:
+        problems.append("GitHub 不可达时应在 note 里说明原因（否则产物里像「0 节点成功」）")
+
+    # 12. GITHUB_SEARCH=0 时一次请求都不发
+    os.environ["GITHUB_SEARCH"] = "0"
+    source_mod.fetch = _dead
+    try:
+        off_report = source_mod._collect_github_search(log=lambda *a, **k: None)
+    finally:
+        source_mod.fetch = saved
+        os.environ.pop("GITHUB_SEARCH", None)
+    if off_report.proxies or off_report.urls:
+        problems.append("GITHUB_SEARCH=0 时不该发任何请求")
+
+    # 13. 它必须挂在 collect() 的同一步里；但显式 --sources 时默认不跑
+    source_mod.fetch = _dead
+    try:
+        picked = source_mod.collect(only={"manifest"}, log=lambda *a, **k: None)
+        forced = source_mod.collect(only={"github-search"}, log=lambda *a, **k: None)
+    finally:
+        source_mod.fetch = saved
+    if any(r.sid == "github-search" for r in picked):
+        problems.append("--sources 指定单个静态源时不该顺带跑 github-search")
+    if [r.sid for r in forced] != ["github-search"]:
+        problems.append(f"--sources github-search 应只跑动态源，实得 {[r.sid for r in forced]}")
+
     if problems:
         print(f"✗ {len(problems)} 处失败")
         for item in problems:
             print("   -", item)
         return 1
-    print(f"✓ 源站适配器通过：{len(sids)} 个源、CMS(.htm)/WP(日期目录)/direct(无扩展名接口)/"
+    print(f"✓ 源站适配器通过：{len(sids)} 个静态源 + GitHub 自动搜索、"
+          f"CMS(.htm)/WP(日期目录)/direct(无扩展名接口)/"
           f"dated-sub(数字ID->带日期文件)/三种文章兜底/两种正文格式")
     return 0
 

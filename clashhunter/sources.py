@@ -58,6 +58,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 import yaml
 
@@ -423,6 +424,196 @@ def _gh_uploads(repo: str, *, max_files: int = 8, log=print) -> list[str]:
     return []
 
 
+# --------------------------------------------------------------------------- GitHub 自动搜索
+# 静态清单只能覆盖「已经知道的那 14 个源站」，而 GitHub 上每天都有新的免费节点镜像仓。
+# 这里在**采集阶段**顺带做一次仓库搜索，搜到的订阅和静态源走同一条流水线
+# （去重 → TCP → 延迟 → 测速），没有特殊通道 —— 所以它们同样要证明自己能连上。
+#
+# 只查仓库（GET /search/repositories），不查代码：
+#   * 仓库搜索未认证 10 次/分钟，默认 3 条查询 + 每仓 1 次 README = 11 次/轮；
+#   * **代码搜索必须带 token**（未认证一律 401），所以不碰 `/search/code`。
+# README 取不到或里面没有订阅地址时，按固定文件名试 raw —— raw.githubusercontent
+# 不计 API 限额，404 也便宜。搜不到、限额用完、api.github.com 不可达都只记一条
+# warn：这一源失败绝不能把整轮采集拖红。
+#
+# 想关掉：GITHUB_SEARCH=0。想提高限额：GITHUB_TOKEN / GH_TOKEN（见 _gh_headers）。
+GH_SEARCH_REPOS = 8          # 每轮最多看几个仓（README 请求数 = 这个数）
+GH_SEARCH_DAYS = 30          # 只看最近多少天有推送的仓 —— 停更的仓节点早失效了
+GH_SEARCH_QUERIES = (
+    "clash free nodes pushed:>{since}",
+    "v2ray subscription nodes pushed:>{since}",
+    "clash subscription free proxies pushed:>{since}",
+)
+# README 里宁可没写地址也不能空手而归时，按这些名字在 main 分支试一遍。
+GH_COMMON_FILES = ("clash.yaml", "clash.yml", "sub.yaml", "config.yaml",
+                   "nodes.yaml", "v2ray.txt", "nodes.txt", "sub.txt")
+
+_REPO_IN_URL_RE = re.compile(
+    r"(?:raw\.githubusercontent\.com|github\.com)/([^/\s]+/[^/\s]+?)(?:\.git)?(?:/|$)"
+)
+# README 里的 blob / raw 链接换成 raw 直链；否则抓回来的是 HTML 页面。
+_GITHUB_BLOB_RE = re.compile(
+    r"https?://github\.com/([^/\s]+/[^/\s]+)/(?:blob|raw)/([^/\s]+)/([^\s)\"'<>\]]+)"
+)
+
+
+def _known_repos() -> set[str]:
+    """静态清单里已经接过的仓 —— 搜索结果里再出现就不重复抓一遍。"""
+    known: set[str] = set()
+    for source in SOURCES:
+        # gh-uploads 的 url 就是裸的 owner/repo（没有主机名），单独收一下
+        if source.kind == "gh-uploads":
+            known.add(source.url.strip("/").lower())
+        for url in (source.url, *source.extra, *source.fallback):
+            match = _REPO_IN_URL_RE.search(url)
+            if match:
+                known.add(match.group(1).lower())
+    return known
+
+
+def _github_rawify(url: str) -> str:
+    match = _GITHUB_BLOB_RE.match(url)
+    if not match:
+        return url
+    return (f"https://raw.githubusercontent.com/{match.group(1)}/"
+            f"{match.group(2)}/{match.group(3)}")
+
+
+def _gh_search_repos(*, limit: int = GH_SEARCH_REPOS, log=print) -> list[str]:
+    """仓库搜索：返回 `owner/repo` 列表，按更新时间倒序、已去重、不超过 limit。"""
+    since = (datetime.now() - timedelta(days=GH_SEARCH_DAYS)).strftime("%Y-%m-%d")
+    known = _known_repos()
+    found: list[str] = []
+    for template in GH_SEARCH_QUERIES:
+        url = ("https://api.github.com/search/repositories?q="
+               + quote(template.format(since=since), safe="")
+               + f"&sort=updated&order=desc&per_page={max(3, limit)}")
+        try:
+            payload = json.loads(fetch(url, headers=_gh_headers(), retries=1, timeout=30))
+        except Exception as exc:  # noqa: BLE001 - 单条查询失败不影响其它查询
+            log(f"    [warn] GitHub 搜索失败（{type(exc).__name__}: {exc}）")
+            continue
+        for item in payload.get("items") or []:
+            full = str(item.get("full_name") or "").strip()
+            if not full or item.get("archived") or item.get("disabled") or item.get("fork"):
+                continue
+            if full.lower() in known or full in found:
+                continue
+            found.append(full)
+            if len(found) >= limit:
+                return found
+    return found
+
+
+def _gh_readme(repo: str) -> str:
+    """取 README 正文。
+
+    先走 raw.githubusercontent（**不计 API 限额**），大小写/文件名不标准时才退回
+    API。实测未认证时 `api.github.com/repos/.../readme` 经常是 403 rate limit，
+    而那正是最需要它工作的时候（一轮要读 8 个仓）。
+    """
+    for branch in ("main", "master"):
+        for name in ("README.md", "readme.md"):
+            try:
+                text = fetch(f"https://raw.githubusercontent.com/{repo}/{branch}/{name}",
+                             retries=1, timeout=20)
+            except FetchError:
+                continue
+            if text.strip():
+                return text
+    headers = dict(_gh_headers())
+    headers["Accept"] = "application/vnd.github.raw"
+    return fetch(f"https://api.github.com/repos/{repo}/readme",
+                 headers=headers, retries=1, timeout=25)
+
+
+def _repo_subscription_urls(repo: str, readme: str, *, log=print) -> list[str]:
+    """从 README 里抠订阅地址；一个都没有就按固定文件名试 raw。"""
+    hits: list[str] = []
+    for raw in _scan_article(readme):
+        hit = _github_rawify(raw)
+        # README 里的 docs / badge 也可能以 .yaml 结尾，先只挑像订阅的：
+        # 分享链接，或者路径里带 clash / sub / node / proxy。
+        scheme = hit.split("://", 1)[0].lower()
+        if not (scheme in urimod.SCHEMES
+                or re.search(r"(clash|sub|node|proxy|v2ray)", hit, re.IGNORECASE)):
+            continue
+        if hit not in hits:
+            hits.append(hit)
+
+    if not hits:
+        base = f"https://raw.githubusercontent.com/{repo}/main/"
+        for name in GH_COMMON_FILES:
+            url = base + name
+            try:
+                if fetch(url, retries=1, timeout=15).strip():
+                    hits.append(url)
+                    break
+            except FetchError:
+                continue
+    return hits[:3]
+
+
+def _collect_github_search(*, log=print) -> SourceReport:
+    """动态源：GitHub 仓库搜索 → README / 固定文件 → 订阅解析。
+
+    返回的是一个普通 `SourceReport`，所以它在产物里和 14 个静态源长得一样，
+    失败也只影响自己这一行。
+    """
+    report = SourceReport(sid="github-search")
+    if os.environ.get("GITHUB_SEARCH", "1") == "0":
+        report.note = "已按 GITHUB_SEARCH=0 关闭"
+        return report
+
+    try:
+        repos = _gh_search_repos(log=log)
+    except Exception as exc:  # noqa: BLE001
+        report.error = f"{type(exc).__name__}: {exc}"
+        log(f"     [error] {report.error}")
+        return report
+
+    if not repos:
+        report.note = "GitHub 搜索没有命中（限额用完 / 网络不通 / 最近没有新仓），不影响其它源"
+        log(f"    [warn] {report.note}")
+        return report
+
+    log(f"    命中 {len(repos)} 个仓库：{', '.join(repos)}")
+    for repo in repos:
+        try:
+            readme = _gh_readme(repo)
+        except Exception as exc:  # noqa: BLE001 - 单仓失败换下一个
+            log(f"    [warn] {repo} 的 README 取不到（{type(exc).__name__}），"
+                f"改按固定文件名试 raw")
+            readme = ""
+
+        urls = _repo_subscription_urls(repo, readme, log=log)
+        got = 0
+        for url in urls:
+            if url not in report.urls:
+                report.urls.append(url)
+            try:
+                # 分享链接本身就是节点，不能拿去 fetch（urllib 不认识 ss:// 这种 scheme）
+                if url.split("://", 1)[0].lower() in urimod.SCHEMES:
+                    parsed = _from_uris([url], f"gh-{repo.split('/')[-1]}")
+                else:
+                    text = fetch(url, referer=f"https://github.com/{repo}",
+                                 retries=1, timeout=25)
+                    parsed = parse_subscription(text, f"gh-{repo.split('/')[-1]}")
+            except FetchError as exc:
+                log(f"    [warn] {url} 下载失败：{exc}")
+                continue
+            if parsed:
+                got += len(parsed)
+                report.proxies.extend(parsed)
+                report.articles.append(f"https://github.com/{repo}")
+                break   # 一个仓只认第一份能解析的订阅，避免同一批节点重复计数
+        log(f"    {repo}: {len(urls)} 个订阅地址 -> {got} 个节点")
+
+    if not report.proxies:
+        report.note = f"搜索到 {len(repos)} 个仓库，但没解析出节点"
+    return report
+
+
 def discover(source: Source, *, max_articles: int = 3, log=print) -> tuple[list[str], list[str]]:
     """返回 (订阅URL列表, 已访问的文章URL列表)。"""
     if source.kind == "github-raw":
@@ -559,4 +750,11 @@ def collect(
             report.error = f"{type(exc).__name__}: {exc}"
             log(f"     [error] {report.error}")
         reports.append(report)
+
+    # 动态源和静态源在**同一个步骤**里产出，后面的去重 / TCP / 延迟 / 测速完全一致。
+    # 传了 --sources 时它默认不跑：手动排查单个源站时不该再额外打 GitHub。
+    if not only or "github-search" in only:
+        log("  -> github-search: 自动搜索近 30 天更新的订阅仓库")
+        reports.append(_collect_github_search(log=log))
+
     return reports
